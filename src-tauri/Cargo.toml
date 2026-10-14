@@ -1,6 +1,6 @@
 [package]
 name = "elefante"
-version = "0.1.0"
+version = "1.0.0"
 authors = ["Rick-dev"]
 description = "Elefante — ambiente local de desenvolvimento web, criado por Rick-dev"
 edition = "2021"

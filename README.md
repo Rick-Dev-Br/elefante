@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/versão-0.1.0-6c5ce7">
+  <img src="https://img.shields.io/badge/versão-1.0.0-6c5ce7">
   <img src="https://img.shields.io/badge/Windows-x64-0078d4?logo=windows">
   <img src="https://img.shields.io/badge/Tauri-2-24c8db?logo=tauri">
   <img src="https://img.shields.io/badge/Rust-2021-dea584?logo=rust">

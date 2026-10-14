@@ -1,6 +1,6 @@
 {
   "productName": "Elefante",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "identifier": "dev.elefante.app",
   "build": { "frontendDist": "../ui" },
   "app": {
