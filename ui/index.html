@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Elefante</title>
+<script>
+  // tema antes de pintar (evita piscar): escolha salva, senão o do Windows
+  (function () {
+    var t = null;
+    try { t = localStorage.getItem('elefante-tema'); } catch (e) {}
+    if (t !== 'light' && t !== 'dark') t = window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
+<style>
+  /* ---------- tokens ---------- */
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg:#0d0b14; --rail:#100e19; --surface:#15121f; --surface-2:#1b1827; --surface-3:#242034;
+    --hover:rgba(255,255,255,.065); --press:rgba(255,255,255,.1);
+    --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.15);
+    --text:#ebe9f3; --muted:#a8a4bb; --subtle:#8985a6;
+    --accent:#6d5ef0; --accent-hover:#7f72f4; --accent-active:#5d4fe0; --on-accent:#ffffff; --accent-fg:#a99dff;
+    --accent-tint:rgba(109,94,240,.18); --accent-ring:rgba(124,108,245,.55);
+    --ok:#34d399; --ok-tint:rgba(52,211,153,.14); --warn:#fbbf24; --warn-tint:rgba(251,191,36,.12);
+    --danger:#f87171; --danger-tint:rgba(248,113,113,.13);
+    --shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 10px 30px rgba(0,0,0,.45);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg:#f4f3f9; --rail:#edebf5; --surface:#ffffff; --surface-2:#f8f7fb; --surface-3:#edebf4;
+    --hover:rgba(40,30,90,.055); --press:rgba(40,30,90,.1);
+    --border:rgba(40,30,90,.1); --border-strong:rgba(40,30,90,.18);
+    --text:#15121f; --muted:#4d4864; --subtle:#6b6684;
+    --accent:#5b4bd9; --accent-hover:#4f3fcc; --accent-active:#4333b8; --on-accent:#ffffff; --accent-fg:#5240d0;
+    --accent-tint:rgba(91,75,217,.10); --accent-ring:rgba(91,75,217,.4);
+    --ok:#15803d; --ok-tint:rgba(21,128,61,.11); --warn:#b45309; --warn-tint:rgba(180,83,9,.11);
+    --danger:#b91c1c; --danger-tint:rgba(185,28,28,.09);
+    --shadow:0 1px 2px rgba(15,23,42,.06), 0 10px 30px rgba(15,23,42,.12);
+  }
+  :root {
+    --duration-fast:120ms; --duration-default:200ms; --duration-slow:320ms;
+    --ease-out:cubic-bezier(0,0,.2,1); --ease-in:cubic-bezier(.4,0,1,1); --ease-in-out:cubic-bezier(.4,0,.2,1);
+    --font:"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif;
+    --font-display:"Segoe UI Variable Display","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
+    --mono:"Cascadia Code","Cascadia Mono",Consolas,monospace;
+  }
+
+  /* ---------- base ---------- */
+  * { box-sizing:border-box }
+  html, body { height:100% }
+  body { margin:0; font:13px/1.45 var(--font); color:var(--text); background:var(--bg); -webkit-font-smoothing:antialiased; overflow:hidden; touch-action:manipulation }
+  button, input, select { font:inherit; color:inherit }
+  button { cursor:pointer }
+  [hidden] { display:none !important }
+  :focus-visible { outline:2px solid var(--accent-ring); outline-offset:2px }
+  .ic { width:18px; height:18px; flex:none; fill:none; stroke:currentColor; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round }
+  .ic.sm { width:15px; height:15px }
+  ::-webkit-scrollbar { width:10px; height:10px } ::-webkit-scrollbar-track { background:transparent }
+  ::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:10px; border:2px solid transparent; background-clip:padding-box }
+  ::-webkit-scrollbar-thumb:hover { background:var(--subtle); background-clip:padding-box; border:2px solid transparent }
+
+  /* ---------- estrutura ---------- */
+  .app { display:grid; grid-template-columns:212px 1fr; height:100vh }
+  .rail { background:var(--rail); border-right:1px solid var(--border); display:flex; flex-direction:column; padding:16px 12px 12px }
+  .brand { display:flex; align-items:center; gap:10px; padding:2px 6px 18px }
+  .brand .mark { width:34px; height:34px; border-radius:10px; background:var(--accent); color:#fdf6ee; display:grid; place-items:center; box-shadow:0 1px 0 rgba(255,255,255,.25) inset }
+  .brand .mark svg { width:22px; height:22px; fill:currentColor; stroke:none }
+  .brand b { display:block; font:600 15px/1.1 var(--font-display); letter-spacing:-.01em }
+  .brand small { color:var(--subtle); font-size:11px }
+  nav { display:flex; flex-direction:column; gap:2px }
+  .nav { display:flex; align-items:center; gap:10px; height:36px; padding:0 10px; border:0; border-radius:8px; background:transparent; color:var(--muted); text-align:left; transition:background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), transform 90ms var(--ease-out) }
+  .nav:hover { background:var(--hover); color:var(--text) }
+  .nav:active { transform:scale(.98); background:var(--press) }
+  .nav[aria-current="page"] { background:var(--surface-3); color:var(--text) }
+  .nav[aria-current="page"] .ic { color:var(--accent-fg) }
+  .nav .count { margin-left:auto; font-size:11px; color:var(--subtle); background:var(--hover); padding:1px 7px; border-radius:99px; min-width:22px; text-align:center }
+  .rail-foot { margin-top:auto; display:flex; flex-direction:column; gap:10px; padding:0 4px }
+  .sign { color:var(--subtle); font-size:11px; line-height:1.4 } .sign b { color:var(--muted); font-weight:600 }
+  main { overflow-y:auto; padding:22px 28px 28px; position:relative }
+  .top { display:flex; align-items:center; gap:12px; margin-bottom:20px }
+  .top h1 { margin:0; font:600 21px/1.2 var(--font-display); letter-spacing:-.015em; text-wrap:balance; flex:1 }
+  .pill { display:inline-flex; align-items:center; gap:8px; height:28px; padding:0 11px; border-radius:99px; background:var(--surface); border:1px solid var(--border); color:var(--muted); font-size:12px; transition:border-color var(--duration-default) var(--ease-out), color var(--duration-default) var(--ease-out) }
+  .pill .d { width:7px; height:7px; border-radius:50%; background:var(--subtle); transition:background-color var(--duration-default) var(--ease-out), box-shadow var(--duration-default) var(--ease-out) }
+  .pill[data-s="all"] { color:var(--text); border-color:var(--ok-tint) } .pill[data-s="all"] .d { background:var(--ok); box-shadow:0 0 0 3px var(--ok-tint) }
+  .pill[data-s="some"] .d { background:var(--warn); box-shadow:0 0 0 3px var(--warn-tint) }
+  .view { display:none; animation:entra var(--duration-default) var(--ease-out) }
+  body[data-view="painel"] #v-painel, body[data-view="sites"] #v-sites, body[data-view="bancos"] #v-bancos, body[data-view="processos"] #v-processos, body[data-view="logs"] #v-logs, body[data-view="ajustes"] #v-ajustes { display:block }
+  @keyframes entra { from { opacity:0; transform:translateY(6px) } to { opacity:1; transform:none } }
+  h2 { margin:26px 0 10px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.09em; color:var(--subtle) }
+  h2:first-child { margin-top:0 }
+  .sub { color:var(--muted); margin:-4px 0 14px }
+
+  /* ---------- botões ---------- */
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; height:34px; padding:0 14px; border-radius:8px; border:1px solid var(--border-strong); background:var(--surface-2); color:var(--text); font-weight:500; white-space:nowrap;
+         transition:background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), transform 90ms var(--ease-out), box-shadow var(--duration-fast) var(--ease-out) }
+  .btn:hover { background:var(--surface-3); border-color:var(--subtle) }
+  .btn:active { transform:scale(.98) }
+  .btn:disabled { opacity:.55; cursor:default; transform:none }
+  .btn.primary { background:var(--accent); border-color:transparent; color:var(--on-accent); font-weight:600; box-shadow:0 1px 0 rgba(255,255,255,.22) inset }
+  .btn.primary:hover { background:var(--accent-hover) } .btn.primary:active { background:var(--accent-active) }
+  .btn.danger { color:var(--danger) } .btn.danger:hover { background:var(--danger-tint); border-color:var(--danger) }
+  .btn.small { height:28px; padding:0 10px; font-size:12px }
+  .btn.icon { width:30px; height:30px; padding:0; border-color:transparent; background:transparent; color:var(--muted) }
+  .btn.icon:hover { background:var(--hover); color:var(--text); border-color:transparent }
+  .btn.loading { pointer-events:none } .btn.loading::before { content:""; width:13px; height:13px; border-radius:50%; border:2px solid currentColor; border-right-color:transparent; animation:gira .7s linear infinite }
+  @keyframes gira { to { transform:rotate(360deg) } }
+
+  /* ---------- listas / grupos ---------- */
+  .group { background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden }
+  .row-i { display:flex; align-items:center; gap:14px; padding:12px 16px; border-bottom:1px solid var(--border); transition:background-color var(--duration-fast) var(--ease-out) }
+  .row-i:last-child { border-bottom:0 }
+  .row-i:hover { background:var(--hover) }
+  .ico-tile { width:36px; height:36px; border-radius:10px; background:var(--surface-3); display:grid; place-items:center; color:var(--muted); flex:none; position:relative; transition:background-color var(--duration-default) var(--ease-out), color var(--duration-default) var(--ease-out) }
+  .ico-tile .st { position:absolute; right:-3px; bottom:-3px; width:11px; height:11px; border-radius:50%; background:var(--subtle); border:2px solid var(--surface); transition:background-color var(--duration-default) var(--ease-out) }
+  .on .ico-tile { background:var(--ok-tint); color:var(--ok) } .on .ico-tile .st { background:var(--ok) }
+  .grow { flex:1; min-width:0 } .grow b { display:block; font-weight:600 } .grow small { color:var(--subtle); display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .switch { position:relative; width:42px; height:24px; border-radius:99px; border:1px solid var(--border-strong); background:var(--surface-3); padding:0; flex:none; transition:background-color var(--duration-default) var(--ease-out), border-color var(--duration-default) var(--ease-out) }
+  .switch::after { content:""; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:var(--muted); transition:transform var(--duration-default) var(--ease-out), background-color var(--duration-default) var(--ease-out) }
+  .switch:hover { border-color:var(--subtle) }
+  .switch[aria-checked="true"] { background:var(--ok); border-color:transparent } .switch[aria-checked="true"]::after { transform:translateX(18px); background:#fff }
+  .switch:disabled { cursor:default } .switch.pending::after { animation:pulsa .8s var(--ease-in-out) infinite alternate }
+  @keyframes pulsa { to { opacity:.45 } }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(118px, 1fr)); gap:10px }
+  .tile { display:flex; flex-direction:column; align-items:flex-start; gap:12px; padding:14px; border-radius:12px; background:var(--surface); border:1px solid var(--border); color:var(--text); text-align:left; font-weight:500;
+          transition:background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out), transform 90ms var(--ease-out) }
+  .tile .ic { width:20px; height:20px; color:var(--muted); transition:color var(--duration-fast) var(--ease-out) }
+  .tile:hover { background:var(--surface-2); border-color:var(--border-strong) } .tile:hover .ic { color:var(--accent-fg) }
+  .tile:active { transform:scale(.98) }
+
+  /* ---------- formulários ---------- */
+  .field { height:34px; width:100%; padding:0 11px; border-radius:8px; border:1px solid var(--border-strong); background:var(--surface-2); color:var(--text); transition:border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out) }
+  .field::placeholder { color:var(--subtle) } .field:hover { border-color:var(--subtle) }
+  .field:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-tint) }
+  .seg { display:inline-flex; padding:3px; gap:2px; border-radius:10px; background:var(--surface-2); border:1px solid var(--border) }
+  .chip { height:28px; padding:0 12px; border-radius:7px; border:0; background:transparent; color:var(--muted); font-weight:500; transition:background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), transform 90ms var(--ease-out) }
+  .chip:hover { color:var(--text); background:var(--hover) } .chip:active { transform:scale(.97) }
+  .chip[aria-pressed="true"] { background:var(--accent-tint); color:var(--accent-fg) }
+  .newproj { display:flex; flex-direction:column; gap:10px; padding:16px; background:var(--surface); border:1px solid var(--border); border-radius:12px }
+  .line { display:flex; gap:10px; align-items:center } .line .field { flex:1 }
+  .form-grid { display:grid; grid-template-columns:150px 1fr; gap:10px 14px; align-items:center; padding:16px; background:var(--surface); border:1px solid var(--border); border-radius:12px }
+  .form-grid label, .form-grid > span:not(:empty) { color:var(--muted); font-size:12px } .form-grid .check { color:var(--text); font-size:13px } .form-grid .span2 { grid-column:2 }
+  .check { display:flex; align-items:center; gap:10px; color:var(--text); cursor:pointer; min-height:28px } .check input { width:16px; height:16px; accent-color:var(--accent) }
+  .toolbar { display:flex; align-items:center; gap:10px; margin-bottom:12px } .toolbar .field { max-width:260px } .toolbar .sp { flex:1 }
+
+  /* ---------- sites ---------- */
+  .site { display:flex; align-items:center; gap:14px; padding:10px 14px 10px 16px; border-bottom:1px solid var(--border); transition:background-color var(--duration-fast) var(--ease-out) }
+  .site:last-child { border-bottom:0 } .site:hover { background:var(--hover) }
+  .avatar { width:34px; height:34px; border-radius:9px; background:var(--surface-3); color:var(--accent-fg); display:grid; place-items:center; font:600 14px var(--font-display); text-transform:uppercase; flex:none }
+  .s-name { color:var(--text); font-weight:600; text-decoration:none; cursor:pointer; transition:color var(--duration-fast) var(--ease-out) } .s-name:hover { color:var(--accent-fg) }
+  .s-path { display:block; color:var(--subtle); font:11.5px var(--mono); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .s-acts { display:flex; gap:2px; opacity:.55; transition:opacity var(--duration-fast) var(--ease-out) } .site:hover .s-acts, .s-acts:focus-within { opacity:1 }
+  .empty { padding:34px 20px; text-align:center; color:var(--subtle) } .empty .ic { width:26px; height:26px; margin-bottom:8px }
+  .meta-r { color:var(--subtle); font:12px var(--mono); white-space:nowrap }
+
+  /* ---------- logs / texto ---------- */
+  pre { margin:12px 0 0; padding:14px 16px; max-height:calc(100vh - 230px); min-height:160px; overflow:auto; background:var(--bg); border:1px solid var(--border); border-radius:12px; font:12px/1.55 var(--mono); white-space:pre-wrap; color:var(--muted) }
+  .msgline { margin-top:12px; color:var(--muted); white-space:pre-wrap; font-size:12.5px }
+
+  /* ---------- aviso e toasts ---------- */
+  .banner { display:flex; gap:12px; align-items:center; margin-bottom:18px; padding:12px 16px; border-radius:12px; background:var(--warn-tint); border:1px solid var(--warn); color:var(--text) }
+  .banner .ic { color:var(--warn) } .banner a { color:var(--warn); font-weight:600; cursor:pointer }
+  #toasts { position:fixed; right:18px; bottom:18px; display:flex; flex-direction:column; gap:10px; z-index:20; width:min(380px, calc(100vw - 36px)) }
+  .toast { display:flex; align-items:flex-start; gap:12px; padding:12px 12px 12px 14px; border-radius:12px; background:var(--surface-3); border:1px solid var(--border-strong); box-shadow:var(--shadow); animation:toast-in var(--duration-default) var(--ease-out); transform-origin:bottom right }
+  .toast.out { animation:toast-out 150ms var(--ease-in) forwards }
+  @keyframes toast-in { from { opacity:0; transform:translateY(10px) scale(.97) } to { opacity:1; transform:none } }
+  @keyframes toast-out { to { opacity:0; transform:translateY(4px) scale(.98) } }
+  .toast .t-ic { margin-top:1px; color:var(--muted) } .toast.ok .t-ic { color:var(--ok) } .toast.err .t-ic { color:var(--danger) }
+  .toast .t-msg { flex:1; min-width:0; white-space:pre-wrap; word-break:break-word; font-size:12.5px; line-height:1.5 } .toast .t-body { flex:1; min-width:0; display:flex; flex-direction:column; align-items:flex-start; gap:10px }
+  .toast.err { border-color:var(--danger-tint) }
+
+  @media (max-width: 860px) { .app { grid-template-columns:64px 1fr } .nav span, .brand div, .sign, .nav .count { display:none } .nav { justify-content:center; padding:0 } .brand { justify-content:center; padding-bottom:14px } main { padding:18px } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important } }
+</style>
+</head>
+<body data-view="painel">
+
+<!-- ícones (traço fino, herdam a cor do texto) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.6"/><rect x="14" y="3" width="7" height="7" rx="1.6"/><rect x="3" y="14" width="7" height="7" rx="1.6"/><rect x="14" y="14" width="7" height="7" rx="1.6"/></symbol>
+  <symbol id="i-window" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.4"/><path d="M3 9h18"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18"/></symbol>
+  <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/><path d="M4 11.5v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.4"/><path d="m3.5 7.5 8.5 6 8.5-6"/></symbol>
+  <symbol id="i-term" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2.2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.9-3M4 5v3h3"/><path d="M4 13a8 8 0 0 0 14.9 3M20 19v-3h-3"/></symbol>
+  <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.3 7.3a8 8 0 1 0 11.4 0"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+  <symbol id="i-log" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2.4"/><path d="M9 8h6M9 12h6M9 16h4"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4 6.5 6.5 0 0 0 20 14.5z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5v14l12-7z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V5M7 9l5-5 5 5M5 20h14"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 10v4.2M12 17.4v.1"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.6v.1"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4-4"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3.3 8 8.7 5 8.7-5M12 13v8"/></symbol>
+</svg>
+
+<div class="app">
+  <aside class="rail">
+    <div class="brand">
+      <div class="mark" aria-hidden="true">
+        <!-- elefante: orelhas, cabeça, tromba e presas -->
+        <svg viewBox="0 0 24 24"><ellipse cx="5.6" cy="10" rx="3.4" ry="4.6" opacity=".55"/><ellipse cx="18.4" cy="10" rx="3.4" ry="4.6" opacity=".55"/><circle cx="12" cy="10.2" r="6"/><path d="M10.4 14.6c0 3.6.2 5.4 1.9 6.1 1.5.6 2.8-.2 2.6-1.5-.2-1.1-1.3-1-1.5-2.2-.1-.9 0-1.6 0-2.4z"/></svg>
+      </div>
+      <div><b>Elefante</b><small id="ver"></small></div>
+    </div>
+    <nav aria-label="Seções">
+      <button class="nav" data-go="painel" aria-current="page"><svg class="ic"><use href="#i-grid"/></svg><span>Painel</span></button>
+      <button class="nav" data-go="sites"><svg class="ic"><use href="#i-window"/></svg><span>Sites</span><em class="count" id="c-sites" style="font-style:normal">0</em></button>
+      <button class="nav" data-go="bancos"><svg class="ic"><use href="#i-db"/></svg><span>Bancos de dados</span></button>
+      <button class="nav" data-go="processos"><svg class="ic"><use href="#i-activity"/></svg><span>Processos</span><em class="count" id="c-procs" style="font-style:normal">0</em></button>
+      <button class="nav" data-go="logs"><svg class="ic"><use href="#i-log"/></svg><span>Logs</span></button>
+      <button class="nav" data-go="ajustes"><svg class="ic"><use href="#i-sliders"/></svg><span>Ajustes</span></button>
+    </nav>
+    <div class="rail-foot">
+      <button class="nav" id="theme" aria-label="Alternar tema claro e escuro"><svg class="ic" id="theme-ic"><use href="#i-sun"/></svg><span id="theme-tx">Tema claro</span></button>
+      <div class="sign">Criado por <b>Rick-dev</b><br>© 2026</div>
+    </div>
+  </aside>
+
+  <main>
+    <div class="top">
+      <h1 id="title">Painel</h1>
+      <span class="pill" id="summary" data-s="none"><i class="d"></i><span id="summary-tx">…</span></span>
+      <button class="btn primary" id="all"><svg class="ic sm"><use href="#i-power"/></svg><span id="all-tx">Iniciar tudo</span></button>
+    </div>
+
+    <div class="banner" id="vc" hidden>
+      <svg class="ic"><use href="#i-alert"/></svg>
+      <div>Falta o <b>Visual C++ Redistributable 2015-2022 (x64)</b>, que o Apache, o PHP e o MariaDB precisam. <a data-url="https://aka.ms/vs/17/release/vc_redist.x64.exe">Baixar da Microsoft</a>, instalar e reabrir o Elefante.</div>
+    </div>
+
+    <!-- ===== PAINEL ===== -->
+    <section class="view" id="v-painel">
+      <h2>Serviços</h2>
+      <div class="group">
+        <div class="row-i" id="s-apache"><div class="ico-tile"><svg class="ic"><use href="#i-globe"/></svg><i class="st"></i></div><div class="grow"><b>Apache + PHP</b><small id="p-apache">…</small></div><button class="switch" role="switch" aria-checked="false" aria-label="Apache" data-svc="apache"></button></div>
+        <div class="row-i" id="s-mysql"><div class="ico-tile"><svg class="ic"><use href="#i-db"/></svg><i class="st"></i></div><div class="grow"><b>MariaDB</b><small id="p-mysql">…</small></div><button class="switch" role="switch" aria-checked="false" aria-label="MariaDB" data-svc="mysql"></button></div>
+        <div class="row-i" id="s-mailpit"><div class="ico-tile"><svg class="ic"><use href="#i-mail"/></svg><i class="st"></i></div><div class="grow"><b>Mailpit</b><small id="p-mailpit">…</small></div><button class="switch" role="switch" aria-checked="false" aria-label="Mailpit" data-svc="mailpit"></button></div>
+      </div>
+
+      <h2>Atalhos</h2>
+      <div class="tiles">
+        <button class="tile" id="web"><svg class="ic"><use href="#i-globe"/></svg>Web</button>
+        <button class="tile" id="db"><svg class="ic"><use href="#i-db"/></svg>Banco de dados</button>
+        <button class="tile" id="mail"><svg class="ic"><use href="#i-mail"/></svg>E-mails</button>
+        <button class="tile" id="term"><svg class="ic"><use href="#i-term"/></svg>Terminal</button>
+        <button class="tile" id="www"><svg class="ic"><use href="#i-folder"/></svg>Pasta www</button>
+      </div>
+
+      <h2>Novo projeto</h2>
+      <form class="newproj" id="new" autocomplete="off">
+        <div class="seg" id="kinds" role="group" aria-label="Tipo de projeto">
+          <button type="button" class="chip" data-kind="blank" aria-pressed="true">Vazio</button>
+          <button type="button" class="chip" data-kind="laravel" aria-pressed="false">Laravel</button>
+          <button type="button" class="chip" data-kind="symfony" aria-pressed="false">Symfony</button>
+          <button type="button" class="chip" data-kind="wordpress" aria-pressed="false">WordPress</button>
+        </div>
+        <div class="line">
+          <input class="field" id="pname" placeholder="nome-do-projeto…" spellcheck="false" aria-label="Nome do projeto" required>
+          <button class="btn primary" id="create"><svg class="ic sm"><use href="#i-plus"/></svg>Criar</button>
+        </div>
+        <div class="msgline" id="msg" hidden></div>
+      </form>
+    </section>
+
+    <!-- ===== SITES ===== -->
+    <section class="view" id="v-sites">
+      <div class="toolbar">
+        <input class="field" id="q" placeholder="Filtrar sites…" spellcheck="false" aria-label="Filtrar sites">
+        <span class="sp"></span>
+        <button class="btn" id="ssl" hidden></button>
+        <button class="btn" id="reload"><svg class="ic sm"><use href="#i-refresh"/></svg>Recarregar</button>
+      </div>
+      <div class="group" id="sites"></div>
+    </section>
+
+    <!-- ===== BANCOS ===== -->
+    <section class="view" id="v-bancos">
+      <div class="toolbar">
+        <button class="btn" id="db_refresh"><svg class="ic sm"><use href="#i-refresh"/></svg>Atualizar</button>
+        <button class="btn" id="db_backup"><svg class="ic sm"><use href="#i-download"/></svg>Backup de todos</button>
+        <span class="sp"></span>
+        <button class="btn" id="db2"><svg class="ic sm"><use href="#i-db"/></svg>Abrir HeidiSQL</button>
+      </div>
+      <div class="group" id="dbs"></div>
+      <h2>Importar arquivo .sql</h2>
+      <div class="form-grid">
+        <label for="imp_path">Arquivo</label><input class="field" id="imp_path" placeholder="C:\caminho\dump.sql…" spellcheck="false">
+        <label for="imp_db">Nome do banco novo</label><input class="field" id="imp_db" placeholder="novo_banco…" spellcheck="false">
+        <span></span><div><button class="btn" id="db_import"><svg class="ic sm"><use href="#i-upload"/></svg>Importar arquivo</button></div>
+      </div>
+      <h2>Importar de uma pasta de dados antiga</h2>
+      <p class="sub">Abre a pasta numa cópia temporária e traz os bancos. O que já existe aqui é pulado.</p>
+      <div class="form-grid">
+        <label for="leg_path">Pasta</label><input class="field" id="leg_path" placeholder="C:\elefante\backup\data\mariadb-10.6…" spellcheck="false">
+        <span></span><div><button class="btn" id="db_legacy"><svg class="ic sm"><use href="#i-upload"/></svg>Importar bancos da pasta</button></div>
+      </div>
+      <div class="msgline" id="dbmsg"></div>
+    </section>
+
+    <!-- ===== PROCESSOS ===== -->
+    <section class="view" id="v-processos">
+      <p class="sub">Comandos que você liga e desliga por projeto, como <code style="font-family:var(--mono)">php artisan serve</code> ou <code style="font-family:var(--mono)">npm run dev</code>.</p>
+      <div class="group" id="procs"></div>
+      <h2>Novo processo</h2>
+      <form class="form-grid" id="newproc" autocomplete="off">
+        <label for="pr_name">Nome</label><input class="field" id="pr_name" placeholder="API Laravel…" required>
+        <label for="pr_cmd">Comando</label><input class="field" id="pr_cmd" list="pr_cmds" placeholder="php artisan serve --port=8000…" spellcheck="false" required>
+        <label for="pr_cwd">Pasta</label><input class="field" id="pr_cwd" list="pr_dirs" placeholder="C:\elefante\www\meu-projeto…" spellcheck="false" required>
+        <span></span><div><button class="btn primary"><svg class="ic sm"><use href="#i-plus"/></svg>Adicionar processo</button></div>
+      </form>
+      <datalist id="pr_cmds"><option value="php artisan serve --port=8000"><option value="php artisan queue:work"><option value="php artisan schedule:work"><option value="npm run dev"><option value="npm run build"></datalist>
+      <datalist id="pr_dirs"></datalist>
+      <pre id="plogout" hidden></pre>
+    </section>
+
+    <!-- ===== LOGS ===== -->
+    <section class="view" id="v-logs">
+      <div class="toolbar">
+        <div class="seg" id="logsel" role="group" aria-label="Qual log">
+          <button type="button" class="chip" data-log="apache-error" aria-pressed="true">Apache · erros</button>
+          <button type="button" class="chip" data-log="apache-access" aria-pressed="false">Apache · acessos</button>
+          <button type="button" class="chip" data-log="php" aria-pressed="false">PHP</button>
+          <button type="button" class="chip" data-log="mysql" aria-pressed="false">MariaDB</button>
+          <button type="button" class="chip" data-log="mailpit" aria-pressed="false">Mailpit</button>
+        </div>
+        <span class="sp"></span>
+        <button class="btn" id="log_go"><svg class="ic sm"><use href="#i-refresh"/></svg>Atualizar</button>
+      </div>
+      <pre id="logout">Escolha um log.</pre>
+    </section>
+
+    <!-- ===== AJUSTES ===== -->
+    <section class="view" id="v-ajustes">
+      <h2>Pastas e portas</h2>
+      <div class="form-grid">
+        <label for="p_www">Pasta www</label><input class="field" id="p_www" spellcheck="false">
+        <label for="p_bin">Pasta bin</label><input class="field" id="p_bin" spellcheck="false">
+        <label for="p_apache">Pasta do Apache</label><input class="field" id="p_apache" spellcheck="false">
+        <label for="p_php">Pasta do PHP</label><input class="field" id="p_php" spellcheck="false">
+        <label for="p_mysql">Pasta do MariaDB</label><input class="field" id="p_mysql" spellcheck="false">
+        <label for="p_http">Porta HTTP</label><input class="field" id="p_http" type="number" inputmode="numeric">
+        <label for="p_https">Porta HTTPS</label><input class="field" id="p_https" type="number" inputmode="numeric">
+        <label for="p_mysqlp">Porta MariaDB</label><input class="field" id="p_mysqlp" type="number" inputmode="numeric">
+        <label for="p_domain">Domínio dos sites</label><input class="field" id="p_domain" spellcheck="false">
+      </div>
+      <h2>Comportamento</h2>
+      <div class="form-grid">
+        <span>HTTPS</span><label class="check"><input type="checkbox" id="p_ssl"> Sites também em https://</label>
+        <span>Ao abrir</span><label class="check"><input type="checkbox" id="p_auto"> Iniciar os serviços sozinho</label>
+        <span>Com o Windows</span><label class="check"><input type="checkbox" id="p_win"> Abrir o Elefante ao ligar o PC (fica na bandeja)</label>
+      </div>
+      <div class="line" style="margin-top:14px"><button class="btn primary" id="saveprefs"><svg class="ic sm"><use href="#i-check"/></svg>Salvar</button><span id="pmsg" style="color:var(--muted)"></span></div>
+
+      <h2>Componentes <span id="ncomp" style="text-transform:none;letter-spacing:0;font-weight:400"></span></h2>
+      <div class="group" id="comps"></div>
+
+      <h2>Sobre</h2>
+      <div class="group" id="sobre"><div class="row-i"><div class="ico-tile" style="color:var(--accent-fg)"><svg class="ic"><use href="#i-box"/></svg></div><div class="grow"><b>Elefante <span id="ver2"></span></b><small>Criado por Rick-dev · © 2026 Rick-dev. Todos os direitos reservados.</small></div></div></div>
+    </section>
+  </main>
+</div>
+<div id="toasts" aria-live="polite"></div>
+
+<script>
+const { invoke } = window.__TAURI__.core;
+const $ = (id) => document.getElementById(id);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const ic = (n, c = '') => `<svg class="ic ${c}" aria-hidden="true"><use href="#i-${n}"/></svg>`;
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let cur = null, busy = 0, sitesSig = '';
+
+/* ---------- avisos (toasts) ---------- */
+function toast(msg, kind = 'info', opts = {}) {
+  const el = document.createElement('div');
+  el.className = 'toast ' + kind; el.setAttribute('role', kind === 'err' ? 'alert' : 'status');
+  el.innerHTML = `<span class="t-ic">${ic(kind === 'ok' ? 'check' : kind === 'err' ? 'alert' : 'info')}</span><div class="t-body"><div class="t-msg"></div></div><button class="btn icon small" aria-label="Fechar">${ic('x', 'sm')}</button>`;
+  el.querySelector('.t-msg').textContent = msg;
+  const close = () => { if (el.classList.contains('out')) return; el.classList.add('out'); setTimeout(() => el.remove(), 160); };
+  if (opts.action) {
+    const b = document.createElement('button'); b.className = 'btn small danger'; b.textContent = opts.action.label;
+    b.onclick = async () => { b.disabled = true; try { await opts.action.run(); } catch (e) { fail(e); } close(); };
+    el.querySelector('.t-body').appendChild(b);
+  }
+  el.querySelector('button.icon').onclick = close;
+  $('toasts').appendChild(el);
+  while ($('toasts').children.length > 4) $('toasts').firstChild.remove();
+  setTimeout(close, opts.action ? 20000 : kind === 'err' ? 12000 : 4500);
+}
+
+function fail(e) {
+  const txt = String(e);
+  const m = /Porta (\d+) já está em uso/.exec(txt);
+  if (m) {
+    toast(txt, 'err');
+    invoke('porta_dono', { port: +m[1] }).then((o) => {
+      if (!o || o.name.toLowerCase() === 'elefante.exe') return;
+      toast(`${o.name} (PID ${o.pid}) está usando a porta ${m[1]}.`, 'info', { action: { label: `Encerrar ${o.name}`, run: async () => {
+        if (!confirm(`Encerrar ${o.name} (PID ${o.pid})?\n${o.exe || ''}\n\nTrabalho não salvo nesse programa pode ser perdido.`)) return;
+        toast(await invoke('encerrar_dono_porta', { port: +m[1] }), 'ok');
+      } } });
+    }).catch(() => {});
+  } else toast(txt, 'err');
+}
+
+/* ---------- navegação ---------- */
+const TITULOS = { painel: 'Painel', sites: 'Sites', bancos: 'Bancos de dados', processos: 'Processos', logs: 'Logs', ajustes: 'Ajustes' };
+function go(v) {
+  document.body.dataset.view = v; $('title').textContent = TITULOS[v];
+  $$('.nav[data-go]').forEach((b) => { if (b.dataset.go === v) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+  $('v-' + v).style.animation = 'none'; void $('v-' + v).offsetWidth; $('v-' + v).style.animation = '';
+  if (v === 'sites') renderSites(true); if (v === 'bancos') loadDbs(); if (v === 'processos') loadProcs(); if (v === 'logs') loadLog(); if (v === 'ajustes') { loadPrefs().catch(fail); loadComps().catch(fail); }
+}
+$$('.nav[data-go]').forEach((b) => b.addEventListener('click', () => go(b.dataset.go)));
+
+/* ---------- tema ---------- */
+function setTheme(t, salvar = true) {
+  document.documentElement.setAttribute('data-theme', t);
+  $('theme-ic').innerHTML = `<use href="#i-${t === 'dark' ? 'sun' : 'moon'}"/>`; $('theme-tx').textContent = t === 'dark' ? 'Tema claro' : 'Tema escuro';
+  if (salvar) { try { localStorage.setItem('elefante-tema', t); } catch (e) {} }
+}
+$('theme').onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+setTheme(document.documentElement.dataset.theme, false);
+
+/* ---------- serviços ---------- */
+async function refresh() {
+  if (busy) return;
+  const s = cur = await invoke('status');
+  const lista = ['apache', 'mysql'].concat(s.mailpit_ok ? ['mailpit'] : []);
+  const on = lista.filter((x) => s[x]).length;
+  $('summary').dataset.s = on === 0 ? 'none' : on === lista.length ? 'all' : 'some';
+  $('summary-tx').textContent = on === 0 ? 'Tudo parado' : on === lista.length ? 'Tudo no ar' : `${on} de ${lista.length} no ar`;
+  const tudo = s.apache && s.mysql;
+  $('all-tx').textContent = tudo ? 'Parar tudo' : 'Iniciar tudo';
+  $('all').classList.toggle('primary', !tudo); $('all').classList.toggle('danger', tudo); // laranja = ação principal; parar = perigo
+  for (const svc of ['apache', 'mysql', 'mailpit']) {
+    const row = $('s-' + svc), sw = row.querySelector('.switch'), ligado = !!s[svc];
+    row.classList.toggle('on', ligado); sw.setAttribute('aria-checked', ligado);
+    const porta = svc === 'apache' ? `porta ${s.http_port}` : svc === 'mysql' ? `porta ${s.mysql_port}` : 'SMTP 1025 · web 8025';
+    $('p-' + svc).textContent = svc === 'mailpit' && !s.mailpit_ok ? 'não encontrado em bin\\mailpit' : `${ligado ? 'rodando' : 'parado'} · ${porta}`;
+    if (svc === 'mailpit') sw.disabled = !s.mailpit_ok;
+  }
+  $('c-sites').textContent = s.sites.length;
+  const sig = JSON.stringify(s.sites) + s.ssl_ready; if (sig !== sitesSig) { sitesSig = sig; renderSites(); }
+  $('ssl').hidden = !s.ssl_ready; if (s.ssl_ready && trusted === null) checkTrust();
+}
+
+async function acao(el, fn) {
+  busy++; el.disabled = true; el.classList.add('pending');
+  try { await fn(); } catch (e) { fail(e); } finally { busy--; el.disabled = false; el.classList.remove('pending'); refresh().catch(fail); }
+}
+
+document.addEventListener('click', async (ev) => {
+  const t = ev.target.closest('button, a'); if (!t) return;
+  try {
+    if (t.matches('.switch')) { const svc = t.dataset.svc, ligado = t.getAttribute('aria-checked') === 'true'; await acao(t, () => invoke(ligado ? 'stop' : 'start', { svc })); }
+    else if (t.id === 'all') {
+      busy++; t.disabled = true; t.classList.add('loading');
+      try {
+        const parar = cur.apache && cur.mysql;
+        for (const svc of parar ? ['mailpit', 'apache', 'mysql'] : ['mysql', 'apache', 'mailpit']) { if (svc === 'mailpit' && !cur.mailpit_ok) continue; await invoke(parar ? 'stop' : 'start', { svc }); }
+      } catch (e) { fail(e); } finally { busy--; t.disabled = false; t.classList.remove('loading'); refresh().catch(fail); }
+    }
+    else if (t.id === 'web') await invoke('open_url', { url: `http://localhost:${cur.http_port}/` });
+    else if (t.id === 'mail') await invoke('open_url', { url: 'http://127.0.0.1:8025/' });
+    else if (t.id === 'term') await invoke('terminal');
+    else if (t.id === 'www') await invoke('open_www');
+    else if (t.id === 'db' || t.id === 'db2') await invoke('open_db');
+    else if (t.id === 'reload') { t.classList.add('loading'); try { await invoke('reload_sites'); toast('Sites recarregados.', 'ok'); } finally { t.classList.remove('loading'); } }
+    else if (t.id === 'ssl') { await invoke('trust_ca'); await checkTrust(); toast('Certificado instalado. Reabra o navegador.', 'ok'); }
+    else if (t.dataset.act) await invoke('site_open', { name: t.dataset.name, what: t.dataset.act });
+    else if (t.dataset.url) { ev.preventDefault(); await invoke('open_url', { url: t.dataset.url }); }
+  } catch (e) { fail(e); }
+});
+
+/* ---------- novo projeto ---------- */
+function setKind(k) { $$('#kinds .chip').forEach((c) => c.setAttribute('aria-pressed', c.dataset.kind === k)); }
+const kindAtual = () => ($$('#kinds .chip').find((c) => c.getAttribute('aria-pressed') === 'true') || { dataset: { kind: 'blank' } }).dataset.kind;
+$('kinds').addEventListener('click', (e) => { const c = e.target.closest('.chip'); if (c) setKind(c.dataset.kind); });
+$('new').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const btn = $('create'), msg = $('msg'); btn.disabled = true; btn.classList.add('loading');
+  msg.hidden = false; msg.textContent = 'Criando… (Laravel e WordPress podem levar alguns minutos)';
+  try { const r = await invoke('create_project', { kind: kindAtual(), name: $('pname').value.trim() }); $('pname').value = ''; msg.hidden = true; toast(r, 'ok'); }
+  catch (e) { msg.hidden = true; fail(e); }
+  finally { btn.disabled = false; btn.classList.remove('loading'); refresh().catch(fail); }
+});
+
+/* ---------- sites ---------- */
+let trusted = null;
+async function checkTrust() {
+  trusted = await invoke('ssl_trusted');
+  $('ssl').innerHTML = trusted ? `${ic('lock', 'sm')}HTTPS confiável` : `${ic('lock', 'sm')}Confiar no HTTPS`;
+  $('ssl').disabled = trusted;
+}
+function renderSites(forcar) {
+  if (!cur) return;
+  const q = $('q').value.trim().toLowerCase();
+  const l = cur.sites.filter((s) => !q || s.name.toLowerCase().includes(q) || s.root.toLowerCase().includes(q));
+  $('sites').innerHTML = l.length ? l.map((x) => `<div class="site"><div class="avatar">${esc(x.name[0])}</div><div class="grow"><a class="s-name" href="#" data-url="${esc(x.url)}">${esc(x.name)}</a><span class="s-path" title="${esc(x.root)}">${esc(x.root)}</span></div>` +
+    `<div class="s-acts">${cur.ssl_ready ? `<button class="btn icon" data-url="${esc(x.url_ssl)}" title="Abrir com HTTPS" aria-label="Abrir ${esc(x.name)} com HTTPS">${ic('lock')}</button>` : ''}` +
+    `<button class="btn icon" data-act="folder" data-name="${esc(x.name)}" title="Abrir pasta" aria-label="Abrir pasta de ${esc(x.name)}">${ic('folder')}</button>` +
+    `<button class="btn icon" data-act="terminal" data-name="${esc(x.name)}" title="Terminal na pasta do projeto" aria-label="Terminal em ${esc(x.name)}">${ic('term')}</button>` +
+    `<button class="btn icon" data-act="code" data-name="${esc(x.name)}" title="Abrir no VS Code" aria-label="Abrir ${esc(x.name)} no VS Code">${ic('code')}</button></div></div>`).join('')
+    : `<div class="empty">${ic('search')}<div>${q ? 'Nenhum site com esse filtro.' : 'Nenhum site ainda. Crie uma pasta em www ou use “Novo projeto”.'}</div></div>`;
+}
+$('q').addEventListener('input', () => renderSites());
+
+/* ---------- componentes ---------- */
+async function loadComps() {
+  const list = await invoke('components'), falta = list.filter((c) => !c.installed).length;
+  $('ncomp').textContent = falta ? `· ${falta} faltando` : '· todos instalados';
+  $('comps').innerHTML = list.map((c) => `<div class="row-i"><div class="ico-tile">${ic('box')}</div><div class="grow"><b>${esc(c.label)}</b><small>${c.mb} MB</small></div>` +
+    (c.installed ? `<span style="color:var(--ok);display:flex;align-items:center;gap:6px">${ic('check', 'sm')}instalado</span>` : `<button class="btn small inst" data-id="${c.id}">${ic('download', 'sm')}Baixar e instalar</button>`) + '</div>').join('');
+  return falta;
+}
+$('comps').addEventListener('click', async (ev) => {
+  const b = ev.target.closest('.inst'); if (!b) return;
+  $$('.inst').forEach((x) => (x.disabled = true)); b.classList.add('loading');
+  toast('Baixando e instalando… pode levar alguns minutos.', 'info');
+  try { toast(await invoke('install_component', { id: b.dataset.id }), 'ok'); } catch (e) { fail(e); } finally { loadComps().catch(fail); }
+});
+
+/* ---------- processos ---------- */
+async function loadProcs() {
+  const list = await invoke('procs_list'); $('c-procs').textContent = list.length;
+  $('procs').innerHTML = list.length ? list.map((p) => `<div class="row-i ${p.running ? 'on' : ''}"><div class="ico-tile">${ic('activity')}<i class="st"></i></div><div class="grow"><b>${esc(p.name)}</b><small title="${esc(p.cwd)}">${esc(p.cmd)} — ${esc(p.cwd)}</small></div>` +
+    `<button class="btn small ${p.running ? 'danger' : ''}" data-pact="${p.running ? 'stop' : 'start'}" data-id="${p.id}">${ic(p.running ? 'stop' : 'play', 'sm')}${p.running ? 'Parar' : 'Iniciar'}</button>` +
+    `<button class="btn icon" data-pact="log" data-id="${p.id}" title="Ver log" aria-label="Ver log">${ic('log')}</button><button class="btn icon" data-pact="del" data-id="${p.id}" title="Excluir" aria-label="Excluir">${ic('trash')}</button></div>`).join('')
+    : `<div class="empty">${ic('activity')}<div>Nenhum processo ainda. Cadastre um abaixo (ex.: php artisan serve).</div></div>`;
+  if (cur) $('pr_dirs').innerHTML = cur.sites.map((s) => `<option value="${esc(s.root.replace(/\//g, '\\'))}">`).join('');
+}
+$('procs').addEventListener('click', async (ev) => {
+  const b = ev.target.closest('[data-pact]'); if (!b) return;
+  const id = b.dataset.id, a = b.dataset.pact; b.disabled = true;
+  try {
+    if (a === 'start') await invoke('proc_start', { id });
+    else if (a === 'stop') await invoke('proc_stop', { id });
+    else if (a === 'del') { if (confirm('Excluir este processo da lista? (se estiver rodando, ele é parado)')) await invoke('proc_delete', { id }); }
+    else if (a === 'log') { const o = $('plogout'); o.hidden = false; o.textContent = await invoke('proc_log', { id }); o.scrollTop = o.scrollHeight; }
+  } catch (e) { fail(e); } finally { loadProcs().catch(fail); }
+});
+$('newproc').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  try { await invoke('proc_save', { name: $('pr_name').value, cmd: $('pr_cmd').value, cwd: $('pr_cwd').value }); ['pr_name', 'pr_cmd', 'pr_cwd'].forEach((i) => ($(i).value = '')); toast('Processo adicionado.', 'ok'); }
+  catch (e) { fail(e); } finally { loadProcs().catch(fail); }
+});
+
+/* ---------- bancos ---------- */
+async function loadDbs() {
+  try {
+    const l = await invoke('db_list');
+    $('dbs').innerHTML = l.length ? l.map((d) => `<div class="row-i"><div class="ico-tile">${ic('db')}</div><div class="grow"><b>${esc(d.name)}</b></div><span class="meta-r">${d.mb} MB</span></div>`).join('') : `<div class="empty">${ic('db')}<div>Nenhum banco seu ainda.</div></div>`;
+  } catch (e) { $('dbs').innerHTML = `<div class="empty">${ic('db')}<div>${esc(e)}</div></div>`; }
+}
+async function dbAct(btn, cmd, args) {
+  btn.disabled = true; btn.classList.add('loading'); $('dbmsg').textContent = 'Trabalhando… (bancos grandes podem levar alguns minutos)';
+  try { const r = await invoke(cmd, args); $('dbmsg').textContent = r; toast(r, 'ok'); } catch (e) { $('dbmsg').textContent = ''; fail(e); }
+  finally { btn.disabled = false; btn.classList.remove('loading'); loadDbs(); }
+}
+$('db_refresh').onclick = loadDbs;
+$('db_backup').onclick = (e) => dbAct(e.currentTarget, 'db_backup', {});
+$('db_import').onclick = (e) => dbAct(e.currentTarget, 'db_import_sql', { path: $('imp_path').value, db: $('imp_db').value.trim() });
+$('db_legacy').onclick = (e) => dbAct(e.currentTarget, 'db_import_legacy', { path: $('leg_path').value });
+
+/* ---------- logs ---------- */
+let logAtual = 'apache-error';
+async function loadLog() {
+  const o = $('logout');
+  try { o.textContent = await invoke('log_tail', { name: logAtual }); o.scrollTop = o.scrollHeight; } catch (e) { o.textContent = String(e); }
+}
+$('logsel').addEventListener('click', (e) => { const c = e.target.closest('.chip'); if (!c) return; logAtual = c.dataset.log; $$('#logsel .chip').forEach((x) => x.setAttribute('aria-pressed', x === c)); loadLog(); });
+$('log_go').onclick = loadLog;
+
+/* ---------- ajustes ---------- */
+async function loadPrefs() {
+  const c = await invoke('get_config');
+  $('p_www').value = c.www; $('p_bin').value = c.bin; $('p_apache').value = c.apache; $('p_php').value = c.php; $('p_mysql').value = c.mysql;
+  $('p_http').value = c.http_port; $('p_https').value = c.https_port; $('p_mysqlp').value = c.mysql_port;
+  $('p_domain').value = c.domain; $('p_ssl').checked = c.ssl; $('p_auto').checked = c.auto_start;
+  $('p_win').checked = await invoke('get_autostart');
+}
+$('p_win').addEventListener('change', async () => {
+  try { await invoke('set_autostart', { on: $('p_win').checked }); toast($('p_win').checked ? 'O Elefante vai abrir com o Windows.' : 'O Elefante não abre mais com o Windows.', 'ok'); }
+  catch (e) { fail(e); $('p_win').checked = !$('p_win').checked; }
+});
+$('saveprefs').addEventListener('click', async () => {
+  $('pmsg').textContent = '';
+  try {
+    await invoke('save_config', { cfg: {
+      www: $('p_www').value.trim(), bin: $('p_bin').value.trim(), apache: $('p_apache').value.trim(), php: $('p_php').value.trim(), mysql: $('p_mysql').value.trim(),
+      http_port: +$('p_http').value, https_port: +$('p_https').value, mysql_port: +$('p_mysqlp').value,
+      domain: $('p_domain').value.trim(), ssl: $('p_ssl').checked, auto_start: $('p_auto').checked } });
+    toast('Salvo. Pare e inicie os serviços pra valer.', 'ok');
+  } catch (e) { fail(e); }
+});
+
+/* ---------- eventos da bandeja ---------- */
+const ev = window.__TAURI__.event;
+ev.listen('novo-projeto', (e) => { go('painel'); setKind(e.payload); $('pname').focus(); });
+ev.listen('abrir-preferencias', () => go('ajustes'));
+ev.listen('abrir-processos', () => go('processos'));
+ev.listen('sobre', () => { go('ajustes'); setTimeout(() => $('sobre').scrollIntoView({ behavior: 'smooth' }), 80); });
+ev.listen('erro', (e) => fail(e.payload));
+ev.listen('info', (e) => toast(e.payload, 'ok'));
+
+window.__TAURI__.app.getVersion().then((v) => { $('ver').textContent = 'v' + v; $('ver2').textContent = 'v' + v; }).catch(() => {});
+invoke('vcredist_ok').then((ok) => { $('vc').hidden = ok; }).catch(() => {});
+refresh().catch(fail);
+loadProcs().catch(() => {});
+setInterval(() => refresh().catch(fail), 2000);
+</script>
+</body>
+</html>

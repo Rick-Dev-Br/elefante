@@ -1,0 +1,22 @@
+# Node
+node_modules/
+npm-debug.log*
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Env / segredos
+.env
+.env.*
+*.pem
+*.key
+
+# Editor / SO
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini

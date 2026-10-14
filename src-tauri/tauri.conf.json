@@ -1,0 +1,20 @@
+{
+  "productName": "Elefante",
+  "version": "0.1.0",
+  "identifier": "dev.elefante.app",
+  "build": { "frontendDist": "../ui" },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [{ "label": "main", "title": "Elefante", "width": 980, "height": 680, "minWidth": 820, "minHeight": 520 }],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "publisher": "Rick-dev",
+    "copyright": "© 2026 Rick-dev. Criado por Rick-dev.",
+    "shortDescription": "Elefante — ambiente local de desenvolvimento web, por Rick-dev",
+    "longDescription": "Elefante: Apache, PHP, MariaDB e Mailpit para desenvolvimento web local, com sites automáticos, HTTPS local e criação rápida de projetos. Criado por Rick-dev.",
+    "targets": ["nsis"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.ico"]
+  }
+}
