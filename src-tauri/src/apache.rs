@@ -92,7 +92,7 @@ pub fn write_apache(home: &Path, c: &Cfg) -> Result<PathBuf, String> {
     let cert = if c.ssl { Some(ensure_cert(home, c, &root, &sites)?) } else { None };
     let ssl_conf = if cert.is_some() {
         format!(
-            "LoadModule socache_shmcb_module \"{r}/modules/mod_socache_shmcb.so\"\nLoadModule ssl_module \"{r}/modules/mod_ssl.so\"\nListen {}\nSSLSessionCache \"shmcb:{}/ssl_scache(512000)\"\n",
+            "LoadModule socache_shmcb_module \"{r}/modules/mod_socache_shmcb.so\"\nLoadModule ssl_module \"{r}/modules/mod_ssl.so\"\nListen 127.0.0.1:{}\nSSLSessionCache \"shmcb:{}/ssl_scache(512000)\"\n",
             c.https_port,
             fwd(&dir),
             r = fwd(&root)
@@ -103,7 +103,7 @@ pub fn write_apache(home: &Path, c: &Cfg) -> Result<PathBuf, String> {
 
     let conf = format!(
         r#"ServerRoot "{root}"
-Listen {port}
+Listen 127.0.0.1:{port}
 ServerName localhost:{port}
 {mods}{ssl_conf}
 LoadModule php_module "{php}/php8apache2_4.dll"
