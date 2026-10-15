@@ -1,4 +1,4 @@
-// Apache: certificado local (CA prÃ³pria + SAN de todos os sites) e geraÃ§Ã£o do httpd.conf com os vhosts.
+// Apache: certificado local (CA própria + SAN de todos os sites) e geração do httpd.conf com os vhosts.
 use super::*;
 
 fn openssl(bin: &Path, conf: &Path, args: &[&str]) -> Result<(), String> {
@@ -18,7 +18,7 @@ fn openssl(bin: &Path, conf: &Path, args: &[&str]) -> Result<(), String> {
 // CA própria (criada uma vez) + 1 certificado com SAN de todos os sites.
 // Refeito só quando a lista de hosts muda. Retorna (cert, chave).
 // ponytail: cert vale 825 dias; apagar <app_data>/ssl/san.txt força renovar
-fn ensure_cert(home: &Path, c: &Cfg, apache_root: &Path, sites: &[Site]) -> Result<(String, String), String> {
+pub fn ensure_cert(home: &Path, c: &Cfg, apache_root: &Path, sites: &[Site]) -> Result<(String, String), String> {
     let dir = home.join("ssl");
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let ossl = apache_root.join("bin/openssl.exe");
@@ -34,7 +34,7 @@ fn ensure_cert(home: &Path, c: &Cfg, apache_root: &Path, sites: &[Site]) -> Resu
         ])?;
     }
     let mut hosts = vec!["localhost".to_string(), c.domain.clone(), format!("*.{}", c.domain)];
-    // curinga cobre só 1 nível: nomes com ponto (ex.: testes.gpt) precisam de entrada própria
+    // curinga cobre só 1 nível: nomes com ponto (ex.: meu.site) precisam de entrada própria
     hosts.extend(sites.iter().map(|s| format!("{}.{}", s.name, c.domain)));
     let san = hosts.iter().map(|h| format!("DNS:{h}")).collect::<Vec<_>>().join(",");
 

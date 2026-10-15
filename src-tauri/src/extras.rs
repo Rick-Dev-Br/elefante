@@ -162,8 +162,7 @@ pub fn log_tail(st: State<App>, name: String) -> Result<String, String> {
     let c = load_cfg(&st.home);
     let l = st.home.join("logs");
     let f = match name.as_str() {
-        "apache-error" => l.join("apache-error.log"),
-        "apache-access" => l.join("apache-access.log"),
+        "web-error" | "web-access" => l.join(format!("{}-{}.log", if c.web == "nginx" { "nginx" } else { "apache" }, &name[4..])),
         "mysql" => l.join("mysql.out"),
         "mailpit" => l.join("mailpit.out"),
         "php" => php_log(&c, &st.home),

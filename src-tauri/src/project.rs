@@ -1,4 +1,4 @@
-// Novo projeto (vazio, Laravel, Symfony, WordPress): pasta em www, banco, .env do Laravel e utilidades de execuÃ§Ã£o.
+// Novo projeto (vazio, Laravel, Symfony, WordPress): pasta em www, banco, .env do Laravel e utilidades de execução.
 use super::*;
 
 fn safe_name(n: &str) -> bool {

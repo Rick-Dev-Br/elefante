@@ -22,6 +22,8 @@ fn pkgs(c: &Cfg) -> Vec<Pkg> {
               url: "https://www.apachelounge.com/download/VS17/binaries/httpd-2.4.66-251206-Win64-VS17.zip" },
         Pkg { id: "php", label: "PHP 8.4.13", mb: 32, check: "php8apache2_4.dll", top: "", dir: b.join("php").join(&c.php),
               url: "https://windows.php.net/downloads/releases/archives/php-8.4.13-Win32-vs17-x64.zip" },
+        Pkg { id: "nginx", label: "Nginx 1.28.0", mb: 2, check: "nginx.exe", top: "nginx-1.28.0", dir: b.join("nginx").join(&c.nginx),
+              url: "https://nginx.org/download/nginx-1.28.0.zip" },
         Pkg { id: "mysql", label: "MariaDB 10.6.28", mb: 84, check: "bin/mysqld.exe", top: "mariadb-10.6.28-winx64", dir: b.join("mysql").join(&c.mysql),
               url: "https://archive.mariadb.org/mariadb-10.6.28/winx64-packages/mariadb-10.6.28-winx64.zip" },
         Pkg { id: "composer", label: "Composer", mb: 4, check: "composer.phar", top: "", dir: b.join("composer"),
@@ -58,7 +60,7 @@ fn pkg_installed(c: &Cfg, p: &Pkg) -> bool {
     p.dir.join(p.check).exists()
 }
 
-const CURL: &str = "C:\\Windows\\System32\\curl.exe"; // curl.exe e tar.exe vêm com o Windows 10+
+pub const CURL: &str = "C:\\Windows\\System32\\curl.exe"; // curl.exe e tar.exe vêm com o Windows 10+
 const TAR: &str = "C:\\Windows\\System32\\tar.exe";
 
 fn php_ini(home: &Path, c: &Cfg, php: &Path) -> Result<(), String> {

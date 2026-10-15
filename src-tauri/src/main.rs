@@ -22,13 +22,16 @@ mod components;
 mod dbtools;
 mod extras;
 mod menu;
+mod nginx;
 mod procs;
 mod project;
+mod xdebug;
 
 const NO_WINDOW: u32 = 0x0800_0000;
 const SERVICES: [&str; 3] = ["apache", "mysql", "mailpit"];
 const MAILPIT_UI: u16 = 8025; // ponytail: portas fixas do Mailpit (interface web e SMTP)
 const MAILPIT_SMTP: u16 = 1025;
+const PHP_CGI: u16 = 9123; // php-cgi do Nginx (FastCGI), só em 127.0.0.1
 
 // Editável em <app_data>/config.json (criado na primeira execução).
 #[derive(Serialize, Deserialize, Clone)]
@@ -45,6 +48,8 @@ struct Cfg {
     domain: String,
     ssl: bool,
     auto_start: bool, // iniciar os serviços quando o Elefante abre
+    web: String,      // servidor web: "apache" ou "nginx" (o serviço continua com id "apache")
+    nginx: String,
 }
 
 impl Default for Cfg {
@@ -62,6 +67,8 @@ impl Default for Cfg {
             domain: "lvh.me".into(), // *.lvh.me já resolve p/ 127.0.0.1, sem mexer no hosts
             ssl: true,
             auto_start: false,
+            web: "apache".into(),
+            nginx: "nginx-1.28.0".into(),
         }
     }
 }
@@ -94,6 +101,8 @@ struct Status {
     http_port: u16,
     mysql_port: u16,
     ssl_ready: bool,
+    web: String,
+    xdebug: bool,
     www: String,
     sites: Vec<Site>,
 }
@@ -205,12 +214,15 @@ fn do_start(st: &App, svc: &str) -> Result<(), String> {
         return Ok(());
     }
     let c = load_cfg(&st.home);
-    let ports = match svc {
+    let mut ports = match svc {
         "apache" if c.ssl => vec![c.http_port, c.https_port],
         "apache" => vec![c.http_port],
         "mailpit" => vec![MAILPIT_UI, MAILPIT_SMTP],
         _ => vec![c.mysql_port],
     };
+    if svc == "apache" && c.web == "nginx" {
+        ports.push(PHP_CGI);
+    }
     if let Some(port) = ports.into_iter().find(|&p| in_use(p)) {
         let quem = extras::port_owner(port).map(|o| format!(" por {} (PID {})", o.name, o.pid)).unwrap_or_default();
         return Err(format!("Porta {port} já está em uso{quem}. Feche esse programa (ou mude a porta nas Preferências)."));
@@ -218,6 +230,11 @@ fn do_start(st: &App, svc: &str) -> Result<(), String> {
     let logs = st.home.join("logs");
     fs::create_dir_all(&logs).map_err(|e| e.to_string())?;
     let child = match svc {
+        "apache" if c.web == "nginx" => {
+            let ch = nginx::start(st, &c, &logs)?;
+            *st.sites_sig.lock().unwrap() = sites_signature(&c);
+            ch
+        }
         "apache" => {
             let conf = apache::write_apache(&st.home, &c)?;
             *st.sites_sig.lock().unwrap() = sites_signature(&c);
@@ -272,6 +289,9 @@ fn do_start(st: &App, svc: &str) -> Result<(), String> {
 }
 
 fn do_stop(st: &App, svc: &str) {
+    if svc == "apache" {
+        do_stop(st, "php-cgi"); // só existe com o Nginx
+    }
     let child = st.procs.lock().unwrap().remove(svc);
     let Some(mut ch) = child else { return };
     if svc == "mysql" {
@@ -320,6 +340,8 @@ fn status(st: State<App>) -> Status {
         mysql_port: c.mysql_port,
         ssl_ready: c.ssl && st.home.join("ssl/site.crt").exists(),
         sites: list_sites(&c),
+        web: c.web.clone(),
+        xdebug: xdebug::ligado(&c),
         www: c.www,
     }
 }
@@ -504,6 +526,9 @@ fn save_config(st: State<App>, cfg: Cfg) -> Result<(), String> {
     if ports.contains(&0) || ports[0] == ports[1] || ports[0] == ports[2] || ports[1] == ports[2] {
         return Err("As três portas precisam ser diferentes e maiores que 0.".into());
     }
+    if cfg.web != "apache" && cfg.web != "nginx" {
+        return Err("Servidor web inválido.".into());
+    }
     if cfg.bin.trim().is_empty() || cfg.www.trim().is_empty() {
         return Err("Preencha as pastas bin e www.".into());
     }
@@ -583,7 +608,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![status, start, stop, reload_sites, terminal, open_url, open_www, open_db, ssl_trusted, trust_ca, project::create_project, components::components, components::install_component, site_open, get_config, save_config,
             procs::procs_list, procs::proc_save, procs::proc_delete, procs::proc_start, procs::proc_stop, procs::proc_log,
             dbtools::db_list, dbtools::db_backup, dbtools::db_import_sql, dbtools::db_import_legacy,
-            extras::porta_dono, extras::encerrar_dono_porta, extras::vcredist_ok, extras::get_autostart, extras::set_autostart, extras::log_tail])
+            extras::porta_dono, extras::encerrar_dono_porta, extras::vcredist_ok, extras::get_autostart, extras::set_autostart, extras::log_tail, xdebug::xdebug_toggle])
         .build(tauri::generate_context!())
         .expect("erro ao iniciar o Elefante")
         .run(|app, ev| {

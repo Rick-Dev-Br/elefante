@@ -247,9 +247,10 @@
     <section class="view" id="v-painel">
       <h2>Serviços</h2>
       <div class="group">
-        <div class="row-i" id="s-apache"><div class="ico-tile"><svg class="ic"><use href="#i-globe"/></svg><i class="st"></i></div><div class="grow"><b>Apache + PHP</b><small id="p-apache">…</small></div><button class="switch" role="switch" aria-checked="false" aria-label="Apache" data-svc="apache"></button></div>
+        <div class="row-i" id="s-apache"><div class="ico-tile"><svg class="ic"><use href="#i-globe"/></svg><i class="st"></i></div><div class="grow"><b id="n-apache">Apache + PHP</b><small id="p-apache">…</small></div><button class="switch" role="switch" aria-checked="false" aria-label="Apache" data-svc="apache"></button></div>
         <div class="row-i" id="s-mysql"><div class="ico-tile"><svg class="ic"><use href="#i-db"/></svg><i class="st"></i></div><div class="grow"><b>MariaDB</b><small id="p-mysql">…</small></div><button class="switch" role="switch" aria-checked="false" aria-label="MariaDB" data-svc="mysql"></button></div>
         <div class="row-i" id="s-mailpit"><div class="ico-tile"><svg class="ic"><use href="#i-mail"/></svg><i class="st"></i></div><div class="grow"><b>Mailpit</b><small id="p-mailpit">…</small></div><button class="switch" role="switch" aria-checked="false" aria-label="Mailpit" data-svc="mailpit"></button></div>
+        <div class="row-i" id="s-xdebug"><div class="ico-tile"><svg class="ic"><use href="#i-code"/></svg><i class="st"></i></div><div class="grow"><b>Xdebug</b><small id="p-xdebug">…</small></div><button class="switch" role="switch" aria-checked="false" aria-label="Xdebug" id="xdebug"></button></div>
       </div>
 
       <h2>Atalhos</h2>
@@ -332,8 +333,8 @@
     <section class="view" id="v-logs">
       <div class="toolbar">
         <div class="seg" id="logsel" role="group" aria-label="Qual log">
-          <button type="button" class="chip" data-log="apache-error" aria-pressed="true">Apache · erros</button>
-          <button type="button" class="chip" data-log="apache-access" aria-pressed="false">Apache · acessos</button>
+          <button type="button" class="chip" data-log="web-error" aria-pressed="true">Servidor web · erros</button>
+          <button type="button" class="chip" data-log="web-access" aria-pressed="false">Servidor web · acessos</button>
           <button type="button" class="chip" data-log="php" aria-pressed="false">PHP</button>
           <button type="button" class="chip" data-log="mysql" aria-pressed="false">MariaDB</button>
           <button type="button" class="chip" data-log="mailpit" aria-pressed="false">Mailpit</button>
@@ -350,6 +351,8 @@
       <div class="form-grid">
         <label for="p_www">Pasta www</label><input class="field" id="p_www" spellcheck="false">
         <label for="p_bin">Pasta bin</label><input class="field" id="p_bin" spellcheck="false">
+        <label for="p_web">Servidor web</label><select class="field" id="p_web"><option value="apache">Apache</option><option value="nginx">Nginx</option></select>
+        <label for="p_nginx">Pasta do Nginx</label><input class="field" id="p_nginx" spellcheck="false">
         <label for="p_apache">Pasta do Apache</label><input class="field" id="p_apache" spellcheck="false">
         <label for="p_php">Pasta do PHP</label><input class="field" id="p_php" spellcheck="false">
         <label for="p_mysql">Pasta do MariaDB</label><input class="field" id="p_mysql" spellcheck="false">
@@ -454,6 +457,9 @@ async function refresh() {
     $('p-' + svc).textContent = svc === 'mailpit' && !s.mailpit_ok ? 'não encontrado em bin\\mailpit' : `${ligado ? 'rodando' : 'parado'} · ${porta}`;
     if (svc === 'mailpit') sw.disabled = !s.mailpit_ok;
   }
+  $('s-xdebug').classList.toggle('on', s.xdebug); $('xdebug').setAttribute('aria-checked', s.xdebug);
+  $('p-xdebug').textContent = s.xdebug ? 'ligado · porta 9003 · use ?XDEBUG_TRIGGER=1' : 'desligado';
+  $('n-apache').textContent = (s.web === 'nginx' ? 'Nginx' : 'Apache') + ' + PHP';
   $('c-sites').textContent = s.sites.length;
   const sig = JSON.stringify(s.sites) + s.ssl_ready; if (sig !== sitesSig) { sitesSig = sig; renderSites(); }
   $('ssl').hidden = !s.ssl_ready; if (s.ssl_ready && trusted === null) checkTrust();
@@ -467,7 +473,8 @@ async function acao(el, fn) {
 document.addEventListener('click', async (ev) => {
   const t = ev.target.closest('button, a'); if (!t) return;
   try {
-    if (t.matches('.switch')) { const svc = t.dataset.svc, ligado = t.getAttribute('aria-checked') === 'true'; await acao(t, () => invoke(ligado ? 'stop' : 'start', { svc })); }
+    if (t.id === 'xdebug') await acao(t, async () => toast(await invoke('xdebug_toggle'), 'ok'));
+    else if (t.matches('.switch')) { const svc = t.dataset.svc, ligado = t.getAttribute('aria-checked') === 'true'; await acao(t, () => invoke(ligado ? 'stop' : 'start', { svc })); }
     else if (t.id === 'all') {
       busy++; t.disabled = true; t.classList.add('loading');
       try {
@@ -578,7 +585,7 @@ $('db_import').onclick = (e) => dbAct(e.currentTarget, 'db_import_sql', { path: 
 $('db_legacy').onclick = (e) => dbAct(e.currentTarget, 'db_import_legacy', { path: $('leg_path').value });
 
 /* ---------- logs ---------- */
-let logAtual = 'apache-error';
+let logAtual = 'web-error';
 async function loadLog() {
   const o = $('logout');
   try { o.textContent = await invoke('log_tail', { name: logAtual }); o.scrollTop = o.scrollHeight; } catch (e) { o.textContent = String(e); }
@@ -589,7 +596,7 @@ $('log_go').onclick = loadLog;
 /* ---------- ajustes ---------- */
 async function loadPrefs() {
   const c = await invoke('get_config');
-  $('p_www').value = c.www; $('p_bin').value = c.bin; $('p_apache').value = c.apache; $('p_php').value = c.php; $('p_mysql').value = c.mysql;
+  $('p_www').value = c.www; $('p_bin').value = c.bin; $('p_apache').value = c.apache; $('p_web').value = c.web; $('p_nginx').value = c.nginx; $('p_php').value = c.php; $('p_mysql').value = c.mysql;
   $('p_http').value = c.http_port; $('p_https').value = c.https_port; $('p_mysqlp').value = c.mysql_port;
   $('p_domain').value = c.domain; $('p_ssl').checked = c.ssl; $('p_auto').checked = c.auto_start;
   $('p_win').checked = await invoke('get_autostart');
@@ -602,7 +609,7 @@ $('saveprefs').addEventListener('click', async () => {
   $('pmsg').textContent = '';
   try {
     await invoke('save_config', { cfg: {
-      www: $('p_www').value.trim(), bin: $('p_bin').value.trim(), apache: $('p_apache').value.trim(), php: $('p_php').value.trim(), mysql: $('p_mysql').value.trim(),
+      www: $('p_www').value.trim(), bin: $('p_bin').value.trim(), apache: $('p_apache').value.trim(), web: $('p_web').value, nginx: $('p_nginx').value.trim(), php: $('p_php').value.trim(), mysql: $('p_mysql').value.trim(),
       http_port: +$('p_http').value, https_port: +$('p_https').value, mysql_port: +$('p_mysqlp').value,
       domain: $('p_domain').value.trim(), ssl: $('p_ssl').checked, auto_start: $('p_auto').checked } });
     toast('Salvo. Pare e inicie os serviços pra valer.', 'ok');

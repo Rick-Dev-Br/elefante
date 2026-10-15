@@ -286,10 +286,10 @@ mod tests {
 
     #[test]
     fn nomes_de_banco() {
-        assert!(nome_ok("sigv_api"));
-        assert!(!nome_ok("sigv-api"));
+        assert!(nome_ok("meu_api"));
+        assert!(!nome_ok("meu-api"));
         assert!(!nome_ok("a b"));
         assert!(!nome_ok(""));
-        assert_eq!(nome_arquivo("sigv-teste"), "sigv_teste");
+        assert_eq!(nome_arquivo("meu-teste"), "meu_teste");
     }
 }

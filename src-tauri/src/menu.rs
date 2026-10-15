@@ -46,6 +46,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let mp_ok = mailpit_exe(&c).is_some();
     let marca = |on: bool, n: &str| if on { format!("✔ {n}") } else { format!("    {n}") };
     let liga = |on: bool| if on { "Parar" } else { "Iniciar" };
+    let ngx = c.web == "nginx";
 
     // Elefante
     let elefante = sub(app, "Elefante", vec![
@@ -100,15 +101,16 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     pr.push(it(app, "procs-ui", "Gerenciar processos…", true)?);
     let processos = sub(app, "Processos", pr)?;
 
-    let apache = sub(app, &marca(ap, "Apache"), vec![
+    let apache = sub(app, &marca(ap, if ngx { "Nginx" } else { "Apache" }), vec![
         it(app, "svc:apache", liga(ap), true)?,
         it(app, "reload", "Recarregar sites (reinicia)", ap)?,
+        it(app, "web:trocar", if ngx { "Trocar para Apache" } else { "Trocar para Nginx" }, true)?,
         sep(app)?,
-        it(app, "open:apache-conf", "Abrir httpd.conf (gerado)", true)?,
+        it(app, "open:apache-conf", if ngx { "Abrir nginx.conf (gerado)" } else { "Abrir httpd.conf (gerado)" }, true)?,
         it(app, "open:log-apache-error", "Log de erros", true)?,
         it(app, "open:log-apache-access", "Log de acessos", true)?,
         sep(app)?,
-        it(app, "folder:apache", "Pasta do Apache", true)?,
+        it(app, "folder:apache", if ngx { "Pasta do Nginx" } else { "Pasta do Apache" }, true)?,
     ])?;
 
     let mariadb = sub(app, &marca(my, "MariaDB"), vec![
@@ -144,11 +146,12 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
 
     let mut phps: Vec<Item> = Vec::new();
     for v in versions(&b.join("php")) {
-        let ok = php_com_apache(&c, &v);
+        let ok = ngx || php_com_apache(&c, &v); // o Nginx usa o php-cgi, que todo PHP tem
         let rotulo = format!("{}{}{}", if v == c.php { "✔ " } else { "    " }, v, if ok { "" } else { "  (sem módulo Apache)" });
         phps.push(it(app, &format!("php:{v}"), &rotulo, ok)?);
     }
     phps.push(sep(app)?);
+    phps.push(it(app, "xdebug", &marca(xdebug::ligado(&c), "Xdebug"), true)?);
     phps.push(it(app, "open:php-ini", "Abrir php.ini", true)?);
     phps.push(it(app, "folder:php", "Abrir pasta", true)?);
     let php = sub(app, "PHP", phps)?;
@@ -185,6 +188,8 @@ fn agir(app: &AppHandle, id: &str) -> Result<(), String> {
     let c = load_cfg(&st.home);
     let b = Path::new(&c.bin);
     let logs = st.home.join("logs");
+    let ngx = c.web == "nginx";
+    let web = if ngx { "nginx" } else { "apache" };
     match id {
         "noop" => {}
         "show" => show(app),
@@ -214,6 +219,21 @@ fn agir(app: &AppHandle, id: &str) -> Result<(), String> {
             }
         }
         "reload" => do_reload(&st)?,
+        "web:trocar" => {
+            let estava = running(&st, "apache");
+            do_stop(&st, "apache"); // para o atual; se estava rodando, sobe o outro
+            let mut novo = c.clone();
+            novo.web = if ngx { "apache" } else { "nginx" }.into();
+            save_cfg(&st.home, &novo)?;
+            if estava {
+                do_start(&st, "apache")?;
+            }
+        }
+        "xdebug" => {
+            let msg = xdebug::trocar_e_recarregar(&st)?;
+            show(app);
+            let _ = app.emit("info", msg);
+        }
         "term" => open_terminal(&c, &c.www)?,
         "db" => open_heidi(&c)?,
         "trust" => trust(&st.home)?,
@@ -232,9 +252,10 @@ fn agir(app: &AppHandle, id: &str) -> Result<(), String> {
             }
         }
         "open:config" => notepad(&st.home.join("config.json"))?,
+        "open:apache-conf" if ngx => notepad(&st.home.join("nginx/nginx.conf"))?,
         "open:apache-conf" => notepad(&st.home.join("apache/httpd.conf"))?,
-        "open:log-apache-error" => notepad(&logs.join("apache-error.log"))?,
-        "open:log-apache-access" => notepad(&logs.join("apache-access.log"))?,
+        "open:log-apache-error" => notepad(&logs.join(format!("{web}-error.log")))?,
+        "open:log-apache-access" => notepad(&logs.join(format!("{web}-access.log")))?,
         "open:log-mysql" => notepad(&logs.join("mysql.out"))?,
         "open:log-mailpit" => notepad(&logs.join("mailpit.out"))?,
         "open:php-ini" => notepad(&b.join("php").join(&c.php).join("php.ini"))?,
@@ -242,6 +263,7 @@ fn agir(app: &AppHandle, id: &str) -> Result<(), String> {
         "folder:bin" => explorer(&c.bin)?,
         "folder:www" => explorer(&c.www)?,
         "folder:logs" => explorer(&fwd(&logs))?,
+        "folder:apache" if ngx => explorer(&fwd(&b.join("nginx").join(&c.nginx)))?,
         "folder:apache" => explorer(&fwd(&b.join("apache").join(&c.apache)))?,
         "folder:mysql-data" => explorer(&fwd(&st.home.join("mysql-data")))?,
         "folder:php" | "folder:nodejs" | "folder:python" => explorer(&fwd(&b.join(&id[7..])))?,
@@ -266,7 +288,7 @@ fn agir(app: &AppHandle, id: &str) -> Result<(), String> {
         }
         x if x.starts_with("php:") => {
             let v = &x[4..];
-            if !versions(&b.join("php")).iter().any(|n| n == v) || !php_com_apache(&c, v) {
+            if !versions(&b.join("php")).iter().any(|n| n == v) || (!ngx && !php_com_apache(&c, v)) {
                 return Err(format!("{v} não tem o módulo do Apache (php8apache2_4.dll)."));
             }
             let mut novo = c.clone();
@@ -305,7 +327,7 @@ pub fn watch(app: AppHandle) {
             }
 
             let sig = format!(
-                "{}{}{}{}|{}|{}|{}|{}|{}|{}|{}",
+                "{}{}{}{}|{}|{}|{}|{}|{}|{}|{}|{}",
                 running(&st, "apache"),
                 running(&st, "mysql"),
                 running(&st, "mailpit"),
@@ -316,6 +338,7 @@ pub fn watch(app: AppHandle) {
                 versions(&b.join("nodejs")).join(","),
                 versions(&b.join("python")).join(","),
                 c.www,
+                format!("{}{}", c.web, xdebug::ligado(&c)),
                 procs::load(&st.home).iter().map(|p| format!("{}{}{}", p.id, p.name, procs::is_running(&st, &p.id))).collect::<Vec<_>>().join(","),
             );
             if sig != ultimo {
