@@ -86,7 +86,7 @@
   .pill[data-s="all"] { color:var(--text); border-color:var(--ok-tint) } .pill[data-s="all"] .d { background:var(--ok); box-shadow:0 0 0 3px var(--ok-tint) }
   .pill[data-s="some"] .d { background:var(--warn); box-shadow:0 0 0 3px var(--warn-tint) }
   .view { display:none; animation:entra var(--duration-default) var(--ease-out) }
-  body[data-view="painel"] #v-painel, body[data-view="sites"] #v-sites, body[data-view="bancos"] #v-bancos, body[data-view="processos"] #v-processos, body[data-view="logs"] #v-logs, body[data-view="ajustes"] #v-ajustes { display:block }
+  body[data-view="painel"] #v-painel, body[data-view="sites"] #v-sites, body[data-view="bancos"] #v-bancos, body[data-view="processos"] #v-processos, body[data-view="logs"] #v-logs, body[data-view="firewall"] #v-firewall, body[data-view="ajustes"] #v-ajustes { display:block }
   @keyframes entra { from { opacity:0; transform:translateY(6px) } to { opacity:1; transform:none } }
   h2 { margin:26px 0 10px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.09em; color:var(--subtle) }
   h2:first-child { margin-top:0 }
@@ -142,7 +142,14 @@
   .form-grid { display:grid; grid-template-columns:150px 1fr; gap:10px 14px; align-items:center; padding:16px; background:var(--surface); border:1px solid var(--border); border-radius:12px }
   .form-grid label, .form-grid > span:not(:empty) { color:var(--muted); font-size:12px } .form-grid .check { color:var(--text); font-size:13px } .form-grid .span2 { grid-column:2 }
   .check { display:flex; align-items:center; gap:10px; color:var(--text); cursor:pointer; min-height:28px } .check input { width:16px; height:16px; accent-color:var(--accent) }
-  .toolbar { display:flex; align-items:center; gap:10px; margin-bottom:12px } .toolbar .field { max-width:260px } .toolbar .sp { flex:1 }
+  .toolbar { display:flex; align-items:center; gap:10px; margin-bottom:12px } .toolbar .field { max-width:260px } .toolbar .sp { flex:1 } .toolbar.wrap { flex-wrap:wrap }
+  .pedir { display:flex; align-items:center; gap:10px; padding:10px 16px; border-bottom:1px solid var(--border); background:var(--surface-2) }
+  .pedir label { color:var(--muted); font-size:12px; white-space:nowrap } .pedir .field { flex:1; min-width:120px; height:28px }
+  .bk summary { display:flex; align-items:center; gap:10px; padding:10px 16px; cursor:pointer; list-style:none; border-bottom:1px solid var(--border); transition:background-color var(--duration-fast) var(--ease-out) }
+  .bk summary::-webkit-details-marker { display:none } .bk summary:hover { background:var(--hover) }
+  .bk summary::before { content:"›"; color:var(--subtle); font-size:15px; line-height:1; transition:transform var(--duration-fast) var(--ease-out) } .bk[open] summary::before { transform:rotate(90deg) }
+  .bk:last-child:not([open]) summary { border-bottom:0 } .bk summary .sp { flex:1 } .bk summary b { font-weight:600 }
+  .exts { display:grid; grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); gap:2px 12px; padding:12px 16px; background:var(--surface); border:1px solid var(--border); border-radius:12px }
 
   /* ---------- sites ---------- */
   .site { display:flex; align-items:center; gap:14px; padding:10px 14px 10px 16px; border-bottom:1px solid var(--border); transition:background-color var(--duration-fast) var(--ease-out) }
@@ -153,9 +160,13 @@
   .s-acts { display:flex; gap:2px; opacity:.55; transition:opacity var(--duration-fast) var(--ease-out) } .site:hover .s-acts, .s-acts:focus-within { opacity:1 }
   .empty { padding:34px 20px; text-align:center; color:var(--subtle) } .empty .ic { width:26px; height:26px; margin-bottom:8px }
   .meta-r { color:var(--subtle); font:12px var(--mono); white-space:nowrap }
+  .tags { display:flex; gap:6px; margin-top:4px; flex-wrap:wrap }
+  .tag { font-size:11px; line-height:18px; padding:0 8px; border-radius:99px; background:var(--hover); color:var(--muted); white-space:nowrap }
+  .tag.on { background:var(--ok-tint); color:var(--ok) } .tag.warn { background:var(--warn-tint); color:var(--warn) }
 
   /* ---------- logs / texto ---------- */
   pre { margin:12px 0 0; padding:14px 16px; max-height:calc(100vh - 230px); min-height:160px; overflow:auto; background:var(--bg); border:1px solid var(--border); border-radius:12px; font:12px/1.55 var(--mono); white-space:pre-wrap; color:var(--muted) }
+  #logout { max-height:calc(100vh - 290px) }
   .msgline { margin-top:12px; color:var(--muted); white-space:pre-wrap; font-size:12.5px }
 
   /* ---------- aviso e toasts ---------- */
@@ -205,6 +216,8 @@
   <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 10v4.2M12 17.4v.1"/></symbol>
   <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.6v.1"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4-4"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/><path d="m9.5 9.5 5 5M14.5 9.5l-5 5"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></symbol>
   <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3.3 8 8.7 5 8.7-5M12 13v8"/></symbol>
 </svg>
 
@@ -223,6 +236,7 @@
       <button class="nav" data-go="bancos"><svg class="ic"><use href="#i-db"/></svg><span>Bancos de dados</span></button>
       <button class="nav" data-go="processos"><svg class="ic"><use href="#i-activity"/></svg><span>Processos</span><em class="count" id="c-procs" style="font-style:normal">0</em></button>
       <button class="nav" data-go="logs"><svg class="ic"><use href="#i-log"/></svg><span>Logs</span></button>
+      <button class="nav" data-go="firewall"><svg class="ic"><use href="#i-shield"/></svg><span>Bloqueio de rede</span></button>
       <button class="nav" data-go="ajustes"><svg class="ic"><use href="#i-sliders"/></svg><span>Ajustes</span></button>
     </nav>
     <div class="rail-foot">
@@ -248,6 +262,7 @@
       <h2>Serviços</h2>
       <div class="group">
         <div class="row-i" id="s-apache"><div class="ico-tile"><svg class="ic"><use href="#i-globe"/></svg><i class="st"></i></div><div class="grow"><b id="n-apache">Apache + PHP</b><small id="p-apache">…</small></div><button class="switch" role="switch" aria-checked="false" aria-label="Apache" data-svc="apache"></button></div>
+        <div class="row-i" id="s-php"><div class="ico-tile"><svg class="ic"><use href="#i-box"/></svg></div><div class="grow"><b>PHP</b><small>Versão usada pelo servidor web, pelo terminal e pelos processos</small></div><select class="field" id="php_ver" aria-label="Versão do PHP" style="width:auto;max-width:270px"></select></div>
         <div class="row-i" id="s-mysql"><div class="ico-tile"><svg class="ic"><use href="#i-db"/></svg><i class="st"></i></div><div class="grow"><b>MariaDB</b><small id="p-mysql">…</small></div><button class="switch" role="switch" aria-checked="false" aria-label="MariaDB" data-svc="mysql"></button></div>
         <div class="row-i" id="s-mailpit"><div class="ico-tile"><svg class="ic"><use href="#i-mail"/></svg><i class="st"></i></div><div class="grow"><b>Mailpit</b><small id="p-mailpit">…</small></div><button class="switch" role="switch" aria-checked="false" aria-label="Mailpit" data-svc="mailpit"></button></div>
         <div class="row-i" id="s-xdebug"><div class="ico-tile"><svg class="ic"><use href="#i-code"/></svg><i class="st"></i></div><div class="grow"><b>Xdebug</b><small id="p-xdebug">…</small></div><button class="switch" role="switch" aria-checked="false" aria-label="Xdebug" id="xdebug"></button></div>
@@ -269,7 +284,9 @@
           <button type="button" class="chip" data-kind="laravel" aria-pressed="false">Laravel</button>
           <button type="button" class="chip" data-kind="symfony" aria-pressed="false">Symfony</button>
           <button type="button" class="chip" data-kind="wordpress" aria-pressed="false">WordPress</button>
+          <button type="button" class="chip" data-kind="git" aria-pressed="false">Clonar do Git</button>
         </div>
+        <input class="field" id="purl" placeholder="https://github.com/usuario/projeto.git…" spellcheck="false" aria-label="Endereço do repositório" hidden>
         <div class="line">
           <input class="field" id="pname" placeholder="nome-do-projeto…" spellcheck="false" aria-label="Nome do projeto" required>
           <button class="btn primary" id="create"><svg class="ic sm"><use href="#i-plus"/></svg>Criar</button>
@@ -283,6 +300,7 @@
       <div class="toolbar">
         <input class="field" id="q" placeholder="Filtrar sites…" spellcheck="false" aria-label="Filtrar sites">
         <span class="sp"></span>
+        <button class="btn" id="hosts" hidden><svg class="ic sm"><use href="#i-globe"/></svg><span id="hosts_tx"></span></button>
         <button class="btn" id="ssl" hidden></button>
         <button class="btn" id="reload"><svg class="ic sm"><use href="#i-refresh"/></svg>Recarregar</button>
       </div>
@@ -294,13 +312,18 @@
       <div class="toolbar">
         <button class="btn" id="db_refresh"><svg class="ic sm"><use href="#i-refresh"/></svg>Atualizar</button>
         <button class="btn" id="db_backup"><svg class="ic sm"><use href="#i-download"/></svg>Backup de todos</button>
+        <button class="btn" id="db_novo"><svg class="ic sm"><use href="#i-plus"/></svg>Criar banco</button>
         <span class="sp"></span>
         <button class="btn" id="db2"><svg class="ic sm"><use href="#i-db"/></svg>Abrir HeidiSQL</button>
       </div>
       <div class="group" id="dbs"></div>
+      <div class="msgline" id="dbmsg"></div>
+      <h2>Backups</h2>
+      <div class="toolbar"><span id="bk_info" style="color:var(--subtle)"></span><span class="sp"></span><button class="btn" id="bk_pasta"><svg class="ic sm"><use href="#i-folder"/></svg>Abrir pasta</button></div>
+      <div class="group" id="bks"></div>
       <h2>Importar arquivo .sql</h2>
       <div class="form-grid">
-        <label for="imp_path">Arquivo</label><input class="field" id="imp_path" placeholder="C:\caminho\dump.sql…" spellcheck="false">
+        <label for="imp_path">Arquivo</label><input class="field" id="imp_path" placeholder="C:\caminho\dump.sql… ou arraste o arquivo para a janela" spellcheck="false">
         <label for="imp_db">Nome do banco novo</label><input class="field" id="imp_db" placeholder="novo_banco…" spellcheck="false">
         <span></span><div><button class="btn" id="db_import"><svg class="ic sm"><use href="#i-upload"/></svg>Importar arquivo</button></div>
       </div>
@@ -310,7 +333,6 @@
         <label for="leg_path">Pasta</label><input class="field" id="leg_path" placeholder="C:\elefante\backup\data\mariadb-10.6…" spellcheck="false">
         <span></span><div><button class="btn" id="db_legacy"><svg class="ic sm"><use href="#i-upload"/></svg>Importar bancos da pasta</button></div>
       </div>
-      <div class="msgline" id="dbmsg"></div>
     </section>
 
     <!-- ===== PROCESSOS ===== -->
@@ -331,18 +353,43 @@
 
     <!-- ===== LOGS ===== -->
     <section class="view" id="v-logs">
-      <div class="toolbar">
-        <div class="seg" id="logsel" role="group" aria-label="Qual log">
-          <button type="button" class="chip" data-log="web-error" aria-pressed="true">Servidor web · erros</button>
-          <button type="button" class="chip" data-log="web-access" aria-pressed="false">Servidor web · acessos</button>
-          <button type="button" class="chip" data-log="php" aria-pressed="false">PHP</button>
-          <button type="button" class="chip" data-log="mysql" aria-pressed="false">MariaDB</button>
-          <button type="button" class="chip" data-log="mailpit" aria-pressed="false">Mailpit</button>
+      <div class="toolbar wrap">
+        <select class="field" id="logsel" aria-label="Qual log">
+          <optgroup label="Servidor web"><option value="web-error">Servidor web · erros</option><option value="web-access">Servidor web · acessos</option></optgroup>
+          <option value="php">PHP</option>
+          <optgroup label="MariaDB"><option value="mysql">MariaDB · serviço</option><option value="mysql-lentas">MariaDB · consultas lentas</option><option value="mysql-consultas">MariaDB · todas as consultas</option></optgroup>
+          <option value="mailpit">Mailpit</option>
+        </select>
+        <input class="field" id="log_q" placeholder="Filtrar linhas…" spellcheck="false" aria-label="Filtrar linhas do log" style="max-width:180px">
+        <label class="check"><input type="checkbox" id="log_vivo" checked> Ao vivo</label>
+        <div class="line" style="margin-left:auto">
+          <button class="btn" id="log_reg" hidden><svg class="ic sm"><use href="#i-power"/></svg><span id="log_reg_tx"></span></button>
+          <button class="btn" id="log_prev" hidden><svg class="ic sm"><use href="#i-log"/></svg><span id="log_prev_tx">Execução anterior</span></button>
+          <button class="btn danger" id="log_limpar"><svg class="ic sm"><use href="#i-trash"/></svg>Limpar</button>
+          <button class="btn" id="log_go"><svg class="ic sm"><use href="#i-refresh"/></svg>Atualizar</button>
         </div>
-        <span class="sp"></span>
-        <button class="btn" id="log_go"><svg class="ic sm"><use href="#i-refresh"/></svg>Atualizar</button>
       </div>
       <pre id="logout">Escolha um log.</pre>
+    </section>
+
+    <!-- ===== BLOQUEIO DE REDE (Firewall do Windows) ===== -->
+    <section class="view" id="v-firewall">
+      <p class="sub">Bloqueia a rede de um executável específico (uma versão) no Firewall do Windows, para simular falta de internet. Cada ação pede permissão de administrador. O Firewall não filtra 127.0.0.1: os sites locais continuam abrindo.</p>
+      <h2>Novo bloqueio</h2>
+      <form class="form-grid" id="fwnew" autocomplete="off">
+        <label for="fw_tool">Ferramenta</label><select class="field" id="fw_tool"></select>
+        <label for="fw_ver">Versão</label><div class="line"><select class="field" id="fw_ver"></select><span class="tag" id="fw_tag"></span></div>
+        <label for="fw_exe">Executável</label><input class="field" id="fw_exe" placeholder="C:\caminho\programa.exe…" spellcheck="false" style="font:12px var(--mono)">
+        <span>Direção</span><div class="seg" id="fw_dir" role="group" aria-label="Direção do bloqueio">
+          <button type="button" class="chip" data-dir="in" aria-pressed="false">Entrada</button>
+          <button type="button" class="chip" data-dir="out" aria-pressed="true">Saída</button>
+          <button type="button" class="chip" data-dir="both" aria-pressed="false" id="fw_both">Ambas</button>
+        </div>
+        <span></span><div class="line"><button class="btn primary" id="fw_go"><svg class="ic sm"><use href="#i-shield"/></svg><span id="fw_go_tx">Bloquear</span></button><button type="button" class="btn" id="fw_cancel" hidden>Cancelar edição</button></div>
+      </form>
+      <h2>Regras do Elefante</h2>
+      <div class="toolbar"><span style="color:var(--subtle)">Só as regras criadas aqui (grupo “Elefante” no Firewall); as outras nunca são alteradas.</span><span class="sp"></span><button class="btn" id="fw_refresh"><svg class="ic sm"><use href="#i-refresh"/></svg>Atualizar</button></div>
+      <div class="group" id="fwlist"></div>
     </section>
 
     <!-- ===== AJUSTES ===== -->
@@ -351,11 +398,12 @@
       <div class="form-grid">
         <label for="p_www">Pasta www</label><input class="field" id="p_www" spellcheck="false">
         <label for="p_bin">Pasta bin</label><input class="field" id="p_bin" spellcheck="false">
+        <label for="p_backups">Pasta de backups</label><input class="field" id="p_backups" spellcheck="false">
         <label for="p_web">Servidor web</label><select class="field" id="p_web"><option value="apache">Apache</option><option value="nginx">Nginx</option></select>
-        <label for="p_nginx">Pasta do Nginx</label><input class="field" id="p_nginx" spellcheck="false">
-        <label for="p_apache">Pasta do Apache</label><input class="field" id="p_apache" spellcheck="false">
-        <label for="p_php">Pasta do PHP</label><input class="field" id="p_php" spellcheck="false">
-        <label for="p_mysql">Pasta do MariaDB</label><input class="field" id="p_mysql" spellcheck="false">
+        <label for="p_nginx">Versão do Nginx</label><select class="field" id="p_nginx"></select>
+        <label for="p_apache">Versão do Apache</label><select class="field" id="p_apache"></select>
+        <label for="p_php">Versão do PHP</label><select class="field" id="p_php"></select>
+        <label for="p_mysql">Versão do MariaDB</label><select class="field" id="p_mysql"></select>
         <label for="p_http">Porta HTTP</label><input class="field" id="p_http" type="number" inputmode="numeric">
         <label for="p_https">Porta HTTPS</label><input class="field" id="p_https" type="number" inputmode="numeric">
         <label for="p_mysqlp">Porta MariaDB</label><input class="field" id="p_mysqlp" type="number" inputmode="numeric">
@@ -366,8 +414,28 @@
         <span>HTTPS</span><label class="check"><input type="checkbox" id="p_ssl"> Sites também em https://</label>
         <span>Ao abrir</span><label class="check"><input type="checkbox" id="p_auto"> Iniciar os serviços sozinho</label>
         <span>Com o Windows</span><label class="check"><input type="checkbox" id="p_win"> Abrir o Elefante ao ligar o PC (fica na bandeja)</label>
+        <span>PATH do Windows</span><label class="check"><input type="checkbox" id="p_envauto"> Alterar variáveis de ambiente automaticamente ao alterar versões de executáveis</label>
+        <span>Backup</span><label class="check"><input type="checkbox" id="p_bauto"> Salvar os bancos sozinho uma vez por dia, com o MariaDB ligado (guarda os 5 últimos)</label>
       </div>
       <div class="line" style="margin-top:14px"><button class="btn primary" id="saveprefs"><svg class="ic sm"><use href="#i-check"/></svg>Salvar</button><span id="pmsg" style="color:var(--muted)"></span></div>
+
+      <h2>PHP ativo <span id="php_nome" style="text-transform:none;letter-spacing:0;font-weight:400"></span></h2>
+      <div class="form-grid">
+        <label for="l_memory_limit">Memória por requisição</label><input class="field" id="l_memory_limit" placeholder="512M" spellcheck="false">
+        <label for="l_upload_max_filesize">Maior arquivo enviado</label><input class="field" id="l_upload_max_filesize" placeholder="64M" spellcheck="false">
+        <label for="l_post_max_size">Maior envio de formulário</label><input class="field" id="l_post_max_size" placeholder="64M" spellcheck="false">
+        <label for="l_max_execution_time">Tempo máximo (segundos)</label><input class="field" id="l_max_execution_time" placeholder="120" spellcheck="false">
+      </div>
+      <p class="sub" style="margin:12px 0 8px">Extensões carregadas por este PHP:</p>
+      <div class="exts" id="php_exts"></div>
+      <div class="line" style="margin-top:14px"><button class="btn primary" id="php_aplicar"><svg class="ic sm"><use href="#i-check"/></svg>Aplicar no php.ini</button></div>
+
+      <h2>Baixar outra versão do PHP</h2>
+      <div class="line">
+        <button class="btn" id="php_lista"><svg class="ic sm"><use href="#i-search"/></svg>Ver versões disponíveis</button>
+        <select class="field" id="php_disp" aria-label="Versão para baixar" hidden></select>
+        <button class="btn" id="php_baixar" hidden><svg class="ic sm"><use href="#i-download"/></svg>Baixar e instalar</button>
+      </div>
 
       <h2>Componentes <span id="ncomp" style="text-transform:none;letter-spacing:0;font-weight:400"></span></h2>
       <div class="group" id="comps"></div>
@@ -385,7 +453,8 @@ const $ = (id) => document.getElementById(id);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const ic = (n, c = '') => `<svg class="ic ${c}" aria-hidden="true"><use href="#i-${n}"/></svg>`;
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-let cur = null, busy = 0, sitesSig = '';
+let cur = null, busy = 0, sitesSig = '', phpSig = '';
+const fmtMb = (mb) => (mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`).replace('.', ',');
 
 /* ---------- avisos (toasts) ---------- */
 function toast(msg, kind = 'info', opts = {}) {
@@ -421,12 +490,12 @@ function fail(e) {
 }
 
 /* ---------- navegação ---------- */
-const TITULOS = { painel: 'Painel', sites: 'Sites', bancos: 'Bancos de dados', processos: 'Processos', logs: 'Logs', ajustes: 'Ajustes' };
+const TITULOS = { painel: 'Painel', sites: 'Sites', bancos: 'Bancos de dados', processos: 'Processos', logs: 'Logs', firewall: 'Bloqueio de rede', ajustes: 'Ajustes' };
 function go(v) {
   document.body.dataset.view = v; $('title').textContent = TITULOS[v];
   $$('.nav[data-go]').forEach((b) => { if (b.dataset.go === v) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
   $('v-' + v).style.animation = 'none'; void $('v-' + v).offsetWidth; $('v-' + v).style.animation = '';
-  if (v === 'sites') renderSites(true); if (v === 'bancos') loadDbs(); if (v === 'processos') loadProcs(); if (v === 'logs') loadLog(); if (v === 'ajustes') { loadPrefs().catch(fail); loadComps().catch(fail); }
+  if (v === 'sites') { renderSites(true); loadSitesInfo(); } if (v === 'bancos') loadDbs(); if (v === 'processos') loadProcs(); if (v === 'logs') abrirLogs().catch(fail); if (v === 'firewall') loadFw().catch(fail); if (v === 'ajustes') { loadPrefs().catch(fail); loadComps().catch(fail); loadPhp().catch(fail); } if (v === 'painel') loadPhpPainel().catch(fail);
 }
 $$('.nav[data-go]').forEach((b) => b.addEventListener('click', () => go(b.dataset.go)));
 
@@ -461,7 +530,8 @@ async function refresh() {
   $('p-xdebug').textContent = s.xdebug ? 'ligado · porta 9003 · use ?XDEBUG_TRIGGER=1' : 'desligado';
   $('n-apache').textContent = (s.web === 'nginx' ? 'Nginx' : 'Apache') + ' + PHP';
   $('c-sites').textContent = s.sites.length;
-  const sig = JSON.stringify(s.sites) + s.ssl_ready; if (sig !== sitesSig) { sitesSig = sig; renderSites(); }
+  const sig = JSON.stringify(s.sites) + s.ssl_ready; if (sig !== sitesSig) { sitesSig = sig; renderSites(); if (document.body.dataset.view === 'sites') loadSitesInfo(); }
+  const phpS = s.php + s.web; if (phpS !== phpSig) { phpSig = phpS; loadPhpPainel().catch(fail); }
   $('ssl').hidden = !s.ssl_ready; if (s.ssl_ready && trusted === null) checkTrust();
 }
 
@@ -489,20 +559,29 @@ document.addEventListener('click', async (ev) => {
     else if (t.id === 'db' || t.id === 'db2') await invoke('open_db');
     else if (t.id === 'reload') { t.classList.add('loading'); try { await invoke('reload_sites'); toast('Sites recarregados.', 'ok'); } finally { t.classList.remove('loading'); } }
     else if (t.id === 'ssl') { await invoke('trust_ca'); await checkTrust(); toast('Certificado instalado. Reabra o navegador.', 'ok'); }
+    else if (t.id === 'hosts') { t.classList.add('loading'); toast('Confirme o pedido de administrador do Windows…', 'info'); try { toast(await invoke('hosts_completar'), 'ok'); } finally { t.classList.remove('loading'); checkHosts(); } }
+    else if (t.dataset.act === 'log') { logAtual = 'site:' + t.dataset.name; logAnterior = false; go('logs'); }
+    else if (t.dataset.act === 'preparar') { t.disabled = true; t.classList.add('loading'); toast('Preparando… pode levar alguns minutos.', 'info'); try { toast(await invoke('project_preparar', { name: t.dataset.name }), 'ok'); } finally { loadSitesInfo(); } }
     else if (t.dataset.act) await invoke('site_open', { name: t.dataset.name, what: t.dataset.act });
     else if (t.dataset.url) { ev.preventDefault(); await invoke('open_url', { url: t.dataset.url }); }
   } catch (e) { fail(e); }
 });
 
 /* ---------- novo projeto ---------- */
-function setKind(k) { $$('#kinds .chip').forEach((c) => c.setAttribute('aria-pressed', c.dataset.kind === k)); }
+function setKind(k) { $$('#kinds .chip').forEach((c) => c.setAttribute('aria-pressed', c.dataset.kind === k)); $('purl').hidden = k !== 'git'; $('purl').required = k === 'git'; }
+// o nome do projeto sai do endereço, até você digitar outro
+let nomeDoClone = '';
+$('purl').addEventListener('input', () => {
+  const n = ($('purl').value.trim().split(/[\/:]/).pop() || '').replace(/\.git$/i, '').replace(/[^A-Za-z0-9._-]/g, '-');
+  if (!$('pname').value || $('pname').value === nomeDoClone) $('pname').value = nomeDoClone = n;
+});
 const kindAtual = () => ($$('#kinds .chip').find((c) => c.getAttribute('aria-pressed') === 'true') || { dataset: { kind: 'blank' } }).dataset.kind;
 $('kinds').addEventListener('click', (e) => { const c = e.target.closest('.chip'); if (c) setKind(c.dataset.kind); });
 $('new').addEventListener('submit', async (ev) => {
   ev.preventDefault();
   const btn = $('create'), msg = $('msg'); btn.disabled = true; btn.classList.add('loading');
-  msg.hidden = false; msg.textContent = 'Criando… (Laravel e WordPress podem levar alguns minutos)';
-  try { const r = await invoke('create_project', { kind: kindAtual(), name: $('pname').value.trim() }); $('pname').value = ''; msg.hidden = true; toast(r, 'ok'); }
+  msg.hidden = false; msg.textContent = 'Criando… (Laravel, WordPress e clones podem levar alguns minutos)';
+  try { const r = await invoke('create_project', { kind: kindAtual(), name: $('pname').value.trim(), url: $('purl').value.trim() }); $('pname').value = ''; $('purl').value = ''; msg.hidden = true; toast(r, 'ok'); }
   catch (e) { msg.hidden = true; fail(e); }
   finally { btn.disabled = false; btn.classList.remove('loading'); refresh().catch(fail); }
 });
@@ -514,12 +593,33 @@ async function checkTrust() {
   $('ssl').innerHTML = trusted ? `${ic('lock', 'sm')}HTTPS confiável` : `${ic('lock', 'sm')}Confiar no HTTPS`;
   $('ssl').disabled = trusted;
 }
+let sitesInfo = {};
+async function loadSitesInfo() {
+  try { sitesInfo = Object.fromEntries((await invoke('sites_info')).map((i) => [i.name, i])); renderSites(); } catch (e) { fail(e); }
+  checkHosts();
+}
+async function checkHosts() {
+  try {
+    const f = await invoke('hosts_faltando');
+    $('hosts').hidden = !f.length; $('hosts').title = f.join(', ');
+    $('hosts_tx').textContent = f.length === 1 ? 'Abrir 1 site sem internet' : `Abrir ${f.length} sites sem internet`;
+  } catch (e) { $('hosts').hidden = true; }
+}
+function tagsDoSite(x) {
+  const i = sitesInfo[x.name]; if (!i) return '';
+  const t = [];
+  if (i.tipo) t.push(`<span class="tag">${esc(i.tipo)}</span>`);
+  if (i.php_pede) t.push(i.php_ok === false ? `<span class="tag warn" title="O PHP ativo é ${esc(cur.php)}. Troque a versão no Painel.">pede PHP ${esc(i.php_pede)}</span>` : `<span class="tag">PHP ${esc(i.php_pede)}</span>`);
+  return t.length ? `<div class="tags">${t.join('')}</div>` : '';
+}
 function renderSites(forcar) {
   if (!cur) return;
   const q = $('q').value.trim().toLowerCase();
   const l = cur.sites.filter((s) => !q || s.name.toLowerCase().includes(q) || s.root.toLowerCase().includes(q));
-  $('sites').innerHTML = l.length ? l.map((x) => `<div class="site"><div class="avatar">${esc(x.name[0])}</div><div class="grow"><a class="s-name" href="#" data-url="${esc(x.url)}">${esc(x.name)}</a><span class="s-path" title="${esc(x.root)}">${esc(x.root)}</span></div>` +
-    `<div class="s-acts">${cur.ssl_ready ? `<button class="btn icon" data-url="${esc(x.url_ssl)}" title="Abrir com HTTPS" aria-label="Abrir ${esc(x.name)} com HTTPS">${ic('lock')}</button>` : ''}` +
+  $('sites').innerHTML = l.length ? l.map((x) => `<div class="site"><div class="avatar">${esc(x.name[0])}</div><div class="grow"><a class="s-name" href="#" data-url="${esc(x.url)}">${esc(x.name)}</a><span class="s-path" title="${esc(x.root)}">${esc(x.root)}</span>${tagsDoSite(x)}</div>` +
+    `<div class="s-acts">${(sitesInfo[x.name] || {}).preparar ? `<button class="btn small" data-act="preparar" data-name="${esc(x.name)}" title="Instala as dependências e, em projeto Laravel sem .env, cria o .env e o banco">Preparar</button>` : ''}` +
+    `${(sitesInfo[x.name] || {}).laravel_log ? `<button class="btn icon" data-act="log" data-name="${esc(x.name)}" title="Log do Laravel" aria-label="Log do Laravel de ${esc(x.name)}">${ic('log')}</button>` : ''}` +
+    `${cur.ssl_ready ? `<button class="btn icon" data-url="${esc(x.url_ssl)}" title="Abrir com HTTPS" aria-label="Abrir ${esc(x.name)} com HTTPS">${ic('lock')}</button>` : ''}` +
     `<button class="btn icon" data-act="folder" data-name="${esc(x.name)}" title="Abrir pasta" aria-label="Abrir pasta de ${esc(x.name)}">${ic('folder')}</button>` +
     `<button class="btn icon" data-act="terminal" data-name="${esc(x.name)}" title="Terminal na pasta do projeto" aria-label="Terminal em ${esc(x.name)}">${ic('term')}</button>` +
     `<button class="btn icon" data-act="code" data-name="${esc(x.name)}" title="Abrir no VS Code" aria-label="Abrir ${esc(x.name)} no VS Code">${ic('code')}</button></div></div>`).join('')
@@ -549,7 +649,7 @@ async function loadProcs() {
     `<button class="btn small ${p.running ? 'danger' : ''}" data-pact="${p.running ? 'stop' : 'start'}" data-id="${p.id}">${ic(p.running ? 'stop' : 'play', 'sm')}${p.running ? 'Parar' : 'Iniciar'}</button>` +
     `<button class="btn icon" data-pact="log" data-id="${p.id}" title="Ver log" aria-label="Ver log">${ic('log')}</button><button class="btn icon" data-pact="del" data-id="${p.id}" title="Excluir" aria-label="Excluir">${ic('trash')}</button></div>`).join('')
     : `<div class="empty">${ic('activity')}<div>Nenhum processo ainda. Cadastre um abaixo (ex.: php artisan serve).</div></div>`;
-  if (cur) $('pr_dirs').innerHTML = cur.sites.map((s) => `<option value="${esc(s.root.replace(/\//g, '\\'))}">`).join('');
+  if (cur) $('pr_dirs').innerHTML = cur.sites.map((s) => `<option value="${esc(s.dir.replace(/\//g, '\\'))}">`).join('');
 }
 $('procs').addEventListener('click', async (ev) => {
   const b = ev.target.closest('[data-pact]'); if (!b) return;
@@ -571,34 +671,134 @@ $('newproc').addEventListener('submit', async (ev) => {
 async function loadDbs() {
   try {
     const l = await invoke('db_list');
-    $('dbs').innerHTML = l.length ? l.map((d) => `<div class="row-i"><div class="ico-tile">${ic('db')}</div><div class="grow"><b>${esc(d.name)}</b></div><span class="meta-r">${d.mb} MB</span></div>`).join('') : `<div class="empty">${ic('db')}<div>Nenhum banco seu ainda.</div></div>`;
+    $('dbs').innerHTML = l.length ? l.map((d) => `<div class="row-i"><div class="ico-tile">${ic('db')}</div><div class="grow"><b>${esc(d.name)}</b></div><span class="meta-r">${fmtMb(d.mb)}</span>` +
+      `<button class="btn icon" data-db="backup" data-name="${esc(d.name)}" title="Salvar backup só deste banco" aria-label="Backup de ${esc(d.name)}">${ic('download')}</button>` +
+      `<button class="btn icon" data-db="copiar" data-name="${esc(d.name)}" title="Copiar para um banco novo" aria-label="Copiar ${esc(d.name)}">${ic('copy')}</button>` +
+      `<button class="btn icon" data-db="apagar" data-name="${esc(d.name)}" title="Apagar (salva um backup antes)" aria-label="Apagar ${esc(d.name)}">${ic('trash')}</button></div>`).join('') : `<div class="empty">${ic('db')}<div>Nenhum banco seu ainda.</div></div>`;
   } catch (e) { $('dbs').innerHTML = `<div class="empty">${ic('db')}<div>${esc(e)}</div></div>`; }
+  loadBackups().catch(fail);
 }
 async function dbAct(btn, cmd, args) {
   btn.disabled = true; btn.classList.add('loading'); $('dbmsg').textContent = 'Trabalhando… (bancos grandes podem levar alguns minutos)';
   try { const r = await invoke(cmd, args); $('dbmsg').textContent = r; toast(r, 'ok'); } catch (e) { $('dbmsg').textContent = ''; fail(e); }
   finally { btn.disabled = false; btn.classList.remove('loading'); loadDbs(); }
 }
+// Pede um texto ali mesmo, em `lugar`. Responde com o que foi digitado, ou null se cancelar.
+function pedirTexto(lugar, { rotulo, valor = '', botao, perigo = false }) {
+  $$('.pedir').forEach((x) => x.dispatchEvent(new Event('cancelar')));
+  return new Promise((responde) => {
+    const f = document.createElement('form'); f.className = 'pedir'; f.autocomplete = 'off';
+    f.innerHTML = `<label></label><input class="field" spellcheck="false"><button class="btn small ${perigo ? 'danger' : 'primary'}"></button><button type="button" class="btn small">Cancelar</button>`;
+    const inp = f.querySelector('input'), [ok, nao] = f.querySelectorAll('button');
+    f.querySelector('label').textContent = rotulo; inp.value = valor; inp.setAttribute('aria-label', rotulo); ok.textContent = botao; nao.textContent = 'Cancelar';
+    const fim = (v) => { f.remove(); responde(v); };
+    f.addEventListener('submit', (e) => { e.preventDefault(); fim(inp.value.trim()); });
+    f.addEventListener('cancelar', () => fim(null));
+    nao.onclick = () => fim(null);
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Escape') fim(null); });
+    lugar(f); inp.focus(); inp.select();
+  });
+}
+$('dbs').addEventListener('click', async (ev) => {
+  const b = ev.target.closest('[data-db]'); if (!b) return;
+  const db = b.dataset.name, row = b.closest('.row-i'), abaixo = (f) => row.after(f);
+  if (b.dataset.db === 'backup') return dbAct(b, 'db_backup_um', { db });
+  if (b.dataset.db === 'copiar') {
+    const novo = await pedirTexto(abaixo, { rotulo: `Copiar ${db} para`, valor: `${db}_copia`, botao: 'Copiar' });
+    if (novo) dbAct(b, 'db_copiar', { origem: db, novo });
+  } else {
+    const t = await pedirTexto(abaixo, { rotulo: `Para apagar, digite ${db}`, botao: 'Apagar', perigo: true });
+    if (t === null) return;
+    if (t !== db) return toast(`Para apagar, o nome precisa ser exatamente ${db}.`, 'err');
+    dbAct(b, 'db_apagar', { db });
+  }
+});
+$('db_novo').onclick = async (e) => {
+  const b = e.currentTarget, db = await pedirTexto((f) => $('dbs').prepend(f), { rotulo: 'Nome do banco novo', botao: 'Criar' });
+  if (db) dbAct(b, 'db_criar', { db });
+};
+const TIPO_BACKUP = { automatico: 'automático', manual: 'manual', 'antes-de-apagar': 'antes de apagar' };
+async function loadBackups() {
+  const b = await invoke('db_backups');
+  $('bk_info').textContent = b.lista.length ? `Último: ${b.lista[0].quando} · ${b.lista.length === 1 ? '1 backup' : b.lista.length + ' backups'} · ${fmtMb(b.mb)}` : '';
+  $('bks').innerHTML = b.lista.length ? b.lista.map((k) => `<details class="bk"><summary><b>${esc(k.quando)}</b><span class="tag">${TIPO_BACKUP[k.tipo]}</span><span class="sp"></span><span class="meta-r">${k.arquivos.length === 1 ? '1 banco' : k.arquivos.length + ' bancos'} · ${fmtMb(k.mb)}</span></summary>` +
+    k.arquivos.map((a) => `<div class="row-i"><div class="grow"><b>${esc(a.banco)}</b></div><span class="meta-r">${fmtMb(a.mb)}</span><button class="btn small" data-rest="${esc(a.caminho)}" data-name="${esc(a.banco)}">Restaurar…</button></div>`).join('') + '</details>').join('')
+    : `<div class="empty">${ic('download')}<div>${b.auto ? 'O primeiro backup automático sai cerca de 1 minuto depois de ligar o MariaDB.' : 'Use Backup de todos, ou ligue o backup automático em Ajustes.'}</div></div>`;
+}
+$('bks').addEventListener('click', async (ev) => {
+  const b = ev.target.closest('[data-rest]'); if (!b) return;
+  const db = await pedirTexto((f) => b.closest('.row-i').after(f), { rotulo: 'Restaurar como banco novo', valor: `${b.dataset.name}_restaurado`, botao: 'Restaurar' });
+  if (db) dbAct(b, 'db_import_sql', { path: b.dataset.rest, db });
+});
+$('bk_pasta').onclick = () => invoke('db_abrir_backups').catch(fail);
 $('db_refresh').onclick = loadDbs;
 $('db_backup').onclick = (e) => dbAct(e.currentTarget, 'db_backup', {});
 $('db_import').onclick = (e) => dbAct(e.currentTarget, 'db_import_sql', { path: $('imp_path').value, db: $('imp_db').value.trim() });
 $('db_legacy').onclick = (e) => dbAct(e.currentTarget, 'db_import_legacy', { path: $('leg_path').value });
 
 /* ---------- logs ---------- */
-let logAtual = 'web-error';
-async function loadLog() {
-  const o = $('logout');
-  try { o.textContent = await invoke('log_tail', { name: logAtual }); o.scrollTop = o.scrollHeight; } catch (e) { o.textContent = String(e); }
+let logAtual = 'web-error', logAnterior = false, logTexto = '';
+const TIPO_CONSULTA = { 'mysql-lentas': 'lentas', 'mysql-consultas': 'todas' };
+function desenhaLog(irProFim) {
+  const o = $('logout'), q = $('log_q').value.trim().toLowerCase();
+  const noFim = o.scrollTop + o.clientHeight >= o.scrollHeight - 40; // quem subiu para ler não é puxado de volta
+  const t = q ? logTexto.split('\n').filter((l) => l.toLowerCase().includes(q)).join('\n') : logTexto;
+  if (o.textContent !== t) o.textContent = t;
+  if (irProFim || noFim) o.scrollTop = o.scrollHeight;
 }
-$('logsel').addEventListener('click', (e) => { const c = e.target.closest('.chip'); if (!c) return; logAtual = c.dataset.log; $$('#logsel .chip').forEach((x) => x.setAttribute('aria-pressed', x === c)); loadLog(); });
-$('log_go').onclick = loadLog;
+async function loadLog(auto = false) {
+  const nome = logAtual;
+  let t; try { t = await invoke('log_tail', { name: nome, anterior: logAnterior }); } catch (e) { t = String(e); }
+  if (nome !== logAtual) return; // trocou de log enquanto este carregava
+  logTexto = t; desenhaLog(!auto);
+}
+async function botoesDoLog() {
+  $('log_prev').hidden = !(logAtual === 'mysql' || logAtual === 'mailpit' || logAtual.startsWith('proc:')); // só esses recomeçam o arquivo a cada início
+  $('log_prev_tx').textContent = logAnterior ? 'Execução atual' : 'Execução anterior';
+  $('log_limpar').hidden = logAnterior;
+  const tipo = TIPO_CONSULTA[logAtual]; $('log_reg').hidden = !tipo; if (!tipo) return;
+  try { const c = await invoke('db_consultas_estado'); $('log_reg').dataset.ligado = c[tipo] ? '1' : ''; $('log_reg_tx').textContent = c[tipo] ? 'Desligar registro' : 'Ligar registro'; $('log_reg').disabled = false; }
+  catch (e) { $('log_reg_tx').textContent = 'Ligue o MariaDB para registrar'; $('log_reg').disabled = true; }
+}
+async function abrirLogs() {
+  const l = await invoke('log_lista'), s = $('logsel');
+  s.querySelectorAll('optgroup[data-din]').forEach((x) => x.remove());
+  const grupo = (rotulo, ops) => ops.length ? `<optgroup data-din label="${esc(rotulo)}">${ops.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('')}</optgroup>` : '';
+  s.insertAdjacentHTML('beforeend', grupo('Projetos (log do Laravel)', l.sites.map((n) => ['site:' + n, n])) + grupo('Processos', l.procs.map((p) => ['proc:' + p.id, p.nome])));
+  s.value = logAtual; if (s.value !== logAtual) { logAtual = 'web-error'; s.value = logAtual; }
+  botoesDoLog(); loadLog();
+}
+$('logsel').addEventListener('change', (e) => { logAtual = e.target.value; logAnterior = false; botoesDoLog(); loadLog(); });
+$('log_q').addEventListener('input', () => desenhaLog(true));
+$('log_prev').onclick = () => { logAnterior = !logAnterior; botoesDoLog(); loadLog(); };
+$('log_go').onclick = () => loadLog();
+$('log_limpar').onclick = async () => {
+  if (!confirm('Limpar este log? O que está nele agora será apagado.')) return;
+  try { await invoke('log_limpar', { name: logAtual }); toast('Log limpo.', 'ok'); } catch (e) { fail(e); }
+  loadLog();
+};
+$('log_reg').onclick = async () => {
+  const ligar = !$('log_reg').dataset.ligado;
+  try {
+    await invoke('db_consultas', { tipo: TIPO_CONSULTA[logAtual], ligar });
+    if (ligar) toast('Registro ligado. Ele desliga sozinho quando o MariaDB reiniciar.', 'ok');
+  } catch (e) { fail(e); }
+  botoesDoLog(); loadLog();
+};
 
 /* ---------- ajustes ---------- */
+// O valor atual entra na lista mesmo sem a pasta existir ainda (componente que falta instalar).
+function opcoesDeVersao(id, lista, atual) {
+  const l = !atual || lista.includes(atual) ? lista : [atual, ...lista];
+  $(id).innerHTML = l.map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  $(id).value = atual;
+}
 async function loadPrefs() {
-  const c = await invoke('get_config');
-  $('p_www').value = c.www; $('p_bin').value = c.bin; $('p_apache').value = c.apache; $('p_web').value = c.web; $('p_nginx').value = c.nginx; $('p_php').value = c.php; $('p_mysql').value = c.mysql;
+  const [c, v] = await Promise.all([invoke('get_config'), invoke('versoes')]);
+  $('p_www').value = c.www; $('p_bin').value = c.bin; $('p_backups').value = c.backups; $('p_web').value = c.web;
+  opcoesDeVersao('p_apache', v.apache, c.apache); opcoesDeVersao('p_nginx', v.nginx, c.nginx); opcoesDeVersao('p_php', v.php.map((p) => p.nome), c.php); opcoesDeVersao('p_mysql', v.mysql, c.mysql);
   $('p_http').value = c.http_port; $('p_https').value = c.https_port; $('p_mysqlp').value = c.mysql_port;
-  $('p_domain').value = c.domain; $('p_ssl').checked = c.ssl; $('p_auto').checked = c.auto_start;
+  $('p_domain').value = c.domain; $('p_ssl').checked = c.ssl; $('p_auto').checked = c.auto_start; $('p_envauto').checked = c.env_auto; $('p_bauto').checked = c.backup_auto;
   $('p_win').checked = await invoke('get_autostart');
 }
 $('p_win').addEventListener('change', async () => {
@@ -609,11 +809,137 @@ $('saveprefs').addEventListener('click', async () => {
   $('pmsg').textContent = '';
   try {
     await invoke('save_config', { cfg: {
-      www: $('p_www').value.trim(), bin: $('p_bin').value.trim(), apache: $('p_apache').value.trim(), web: $('p_web').value, nginx: $('p_nginx').value.trim(), php: $('p_php').value.trim(), mysql: $('p_mysql').value.trim(),
+      www: $('p_www').value.trim(), bin: $('p_bin').value.trim(), backups: $('p_backups').value.trim(), apache: $('p_apache').value, web: $('p_web').value, nginx: $('p_nginx').value, php: $('p_php').value, mysql: $('p_mysql').value,
       http_port: +$('p_http').value, https_port: +$('p_https').value, mysql_port: +$('p_mysqlp').value,
-      domain: $('p_domain').value.trim(), ssl: $('p_ssl').checked, auto_start: $('p_auto').checked } });
+      domain: $('p_domain').value.trim(), ssl: $('p_ssl').checked, auto_start: $('p_auto').checked, env_auto: $('p_envauto').checked, backup_auto: $('p_bauto').checked } });
     toast('Salvo. Pare e inicie os serviços pra valer.', 'ok');
   } catch (e) { fail(e); }
+});
+
+/* ---------- PHP ---------- */
+async function loadPhpPainel() {
+  if (!cur) return;
+  const v = await invoke('versoes'), sel = $('php_ver'), soNginx = (p) => cur.web !== 'nginx' && !p.apache;
+  const lista = v.php.some((p) => p.nome === cur.php) ? v.php : [{ nome: cur.php, apache: true }, ...v.php];
+  sel.innerHTML = lista.map((p) => `<option value="${esc(p.nome)}" ${soNginx(p) ? 'disabled' : ''}>${esc(p.nome)}${soNginx(p) ? ' (só Nginx)' : ''}</option>`).join('');
+  sel.value = cur.php;
+}
+$('php_ver').addEventListener('change', (e) => {
+  const sel = e.target;
+  acao(sel, async () => {
+    try { await invoke('php_trocar', { versao: sel.value }); toast(`Agora o PHP ativo é ${sel.value}.`, 'ok'); }
+    catch (err) { sel.value = cur.php; throw err; }
+  });
+});
+const LIMITES_PHP = ['memory_limit', 'upload_max_filesize', 'post_max_size', 'max_execution_time'];
+async function loadPhp() {
+  const p = await invoke('php_config');
+  $('php_nome').textContent = '· ' + p.versao;
+  LIMITES_PHP.forEach((k) => { $('l_' + k).value = p.limites[k] || ''; });
+  $('php_exts').innerHTML = p.extensoes.map((e) => `<label class="check"><input type="checkbox" data-ext="${esc(e.nome)}" ${e.ativa ? 'checked' : ''}>${esc(e.nome)}</label>`).join('') || '<span style="color:var(--subtle)">As extensões aparecem aqui depois que o PHP estiver instalado.</span>';
+  $('php_aplicar').disabled = !p.tem_ini;
+}
+$('php_aplicar').onclick = async (e) => {
+  const b = e.currentTarget; b.disabled = true; b.classList.add('loading');
+  const ligadas = $$('[data-ext]').filter((x) => x.checked).map((x) => x.dataset.ext);
+  const limites = Object.fromEntries(LIMITES_PHP.map((k) => [k, $('l_' + k).value.trim()]).filter(([, v]) => v));
+  try { toast(await invoke('php_aplicar', { ligadas, limites }), 'ok'); } catch (err) { fail(err); }
+  finally { b.classList.remove('loading'); loadPhp().catch(fail); refresh().catch(fail); }
+};
+$('php_lista').onclick = async (e) => {
+  const b = e.currentTarget; b.disabled = true; b.classList.add('loading');
+  try {
+    const l = await invoke('php_disponiveis');
+    $('php_disp').innerHTML = l.map((p) => `<option value="${esc(p.pasta)}" ${p.instalada ? 'disabled' : ''}>${esc(p.versao)} ${p.ts ? 'TS (Apache e Nginx)' : 'NTS (só Nginx)'} · ${esc(p.tamanho)}${p.instalada ? ' · instalada' : ''}</option>`).join('');
+    const livre = l.find((p) => !p.instalada); if (livre) $('php_disp').value = livre.pasta;
+    $('php_disp').hidden = false; $('php_baixar').hidden = false; b.hidden = true;
+  } catch (err) { fail(err); } finally { b.disabled = false; b.classList.remove('loading'); }
+};
+$('php_baixar').onclick = async (e) => {
+  const b = e.currentTarget, pasta = $('php_disp').value; if (!pasta) return;
+  b.disabled = true; b.classList.add('loading'); toast('Baixando… pode levar alguns minutos.', 'info');
+  try { toast(await invoke('php_instalar', { pasta }), 'ok'); $('php_lista').hidden = false; $('php_disp').hidden = true; b.hidden = true; loadPrefs().catch(fail); loadPhpPainel().catch(fail); }
+  catch (err) { fail(err); } finally { b.disabled = false; b.classList.remove('loading'); }
+};
+
+/* ---------- bloqueio de rede (Firewall) ---------- */
+let fwExes = [], fwRegras = [], fwEdit = null;
+const SENTIDO = { in: 'Entrada', out: 'Saída' };
+const exeNome = (p) => p.split('\\').pop();
+async function loadFw() {
+  fwExes = await invoke('fw_exes');
+  const tools = [...new Set(fwExes.map((x) => x.ferramenta)), 'Personalizado'], t = $('fw_tool').value;
+  $('fw_tool').innerHTML = tools.map((n) => `<option>${esc(n)}</option>`).join('');
+  $('fw_tool').value = tools.includes(t) ? t : tools[0];
+  if (!fwEdit) fwVers();
+  await loadFwList();
+}
+// versões da ferramenta escolhida (no PHP, uma linha por executável: php.exe e php-cgi.exe)
+function fwVers(exe) {
+  const custom = $('fw_tool').value === 'Personalizado';
+  $('fw_ver').innerHTML = custom ? '<option value="">—</option>' : fwExes.filter((x) => x.ferramenta === $('fw_tool').value)
+    .map((x) => `<option value="${esc(x.exe)}">${esc(x.versao)} · ${esc(exeNome(x.exe))}${x.ativa ? ' · ativa' : ''}</option>`).join('');
+  $('fw_ver').disabled = custom;
+  if (custom) $('fw_exe').value = exe || ''; else if (exe) $('fw_ver').value = exe;
+  fwSel();
+}
+function fwSel() {
+  const custom = $('fw_tool').value === 'Personalizado', x = fwExes.find((e) => e.exe === $('fw_ver').value);
+  $('fw_exe').readOnly = !custom;
+  if (!custom) $('fw_exe').value = x ? x.exe : '';
+  $('fw_tag').textContent = custom ? 'personalizado' : x ? (x.ativa ? 'versão ativa' : 'instalada · inativa') : 'nenhuma versão';
+  $('fw_tag').className = 'tag' + (!custom && x && x.ativa ? ' on' : '');
+}
+$('fw_tool').addEventListener('change', () => fwVers());
+$('fw_ver').addEventListener('change', fwSel);
+function fwSetDir(d) { $$('#fw_dir .chip').forEach((c) => c.setAttribute('aria-pressed', c.dataset.dir === d)); }
+$('fw_dir').addEventListener('click', (e) => { const c = e.target.closest('.chip'); if (c) fwSetDir(c.dataset.dir); });
+// edição: o formulário passa a alterar a regra r (null = volta a criar)
+function fwModo(r) {
+  fwEdit = r ? r.id : null;
+  $('fw_go_tx').textContent = r ? 'Salvar alteração' : 'Bloquear';
+  $('fw_cancel').hidden = !r; $('fw_both').hidden = !!r;
+  if (!r) { if ($('fw_both').getAttribute('aria-pressed') === 'true') fwSetDir('out'); return; }
+  const x = fwExes.find((e) => e.exe.toLowerCase() === r.exe.toLowerCase());
+  $('fw_tool').value = x ? x.ferramenta : 'Personalizado';
+  fwVers(x ? x.exe : r.exe); fwSetDir(r.dir);
+  $('fwnew').scrollIntoView({ behavior: 'smooth' });
+}
+$('fw_cancel').onclick = () => fwModo(null);
+$('fw_refresh').onclick = () => loadFw().catch(fail);
+$('fwnew').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const b = $('fw_go'), exe = $('fw_exe').value.trim(), d = $$('#fw_dir .chip').find((c) => c.getAttribute('aria-pressed') === 'true').dataset.dir;
+  if (!exe) return toast('Escolha uma versão ou informe o caminho do .exe.', 'err');
+  b.disabled = true; b.classList.add('loading'); toast('Confirme o pedido de administrador do Windows…', 'info');
+  try {
+    toast(fwEdit ? await invoke('fw_editar', { id: fwEdit, exe, dir: d }) : await invoke('fw_criar', { exe, dirs: d === 'both' ? ['in', 'out'] : [d] }), 'ok');
+    fwModo(null);
+  } catch (e) { fail(e); } finally { b.disabled = false; b.classList.remove('loading'); loadFwList(); }
+});
+async function loadFwList() {
+  const box = $('fwlist');
+  if (!fwRegras.length) box.innerHTML = `<div class="empty">${ic('shield')}<div>Lendo o Firewall…</div></div>`;
+  try { fwRegras = await invoke('fw_listar'); } catch (e) { box.innerHTML = `<div class="empty">${ic('alert')}<div>${esc(e)}</div></div>`; return; }
+  box.innerHTML = fwRegras.length ? fwRegras.map((r) => {
+    const quem = r.ativa === null ? 'Personalizado' : `${r.ferramenta} ${r.versao}`;
+    const [cls, est] = !r.existe ? ['warn', 'executável não encontrado (removido ou movido)'] : r.alterada ? ['warn', 'alterada fora do Elefante'] : r.ligada ? ['on', 'bloqueando'] : ['', 'desativada'];
+    return `<div class="row-i ${r.ligada && r.existe && !r.alterada ? 'on' : ''}"><div class="ico-tile">${ic('shield')}<i class="st"></i></div>` +
+      `<div class="grow"><b>${esc(quem)} · ${SENTIDO[r.dir]}</b><span class="s-path" title="${esc(r.exe)}">${esc(r.exe)}</span>` +
+      `<div class="tags"><span class="tag ${cls}">${est}</span>${r.ativa === null ? '' : `<span class="tag ${r.ativa ? 'on' : ''}">${r.ativa ? 'versão ativa' : 'versão inativa'}</span>`}</div></div>` +
+      `<button class="btn small" data-fw="ligar" data-id="${esc(r.id)}">${r.ligada ? 'Desativar' : 'Ativar'}</button>` +
+      `<button class="btn icon" data-fw="editar" data-id="${esc(r.id)}" title="Editar" aria-label="Editar regra">${ic('sliders')}</button>` +
+      `<button class="btn icon" data-fw="del" data-id="${esc(r.id)}" title="Remover" aria-label="Remover regra">${ic('trash')}</button></div>`;
+  }).join('') : `<div class="empty">${ic('shield')}<div>Nenhum bloqueio ainda.</div></div>`;
+}
+$('fwlist').addEventListener('click', async (ev) => {
+  const b = ev.target.closest('[data-fw]'); if (!b) return;
+  const r = fwRegras.find((x) => x.id === b.dataset.id); if (!r) return;
+  if (b.dataset.fw === 'editar') return fwModo(r);
+  if (b.dataset.fw === 'del' && !confirm(`Remover o bloqueio de ${SENTIDO[r.dir].toLowerCase()} de\n${r.exe}?`)) return;
+  b.disabled = true;
+  try { toast(b.dataset.fw === 'del' ? await invoke('fw_remover', { id: r.id }) : await invoke('fw_ligar', { id: r.id, on: !r.ligada }), 'ok'); if (fwEdit === r.id) fwModo(null); }
+  catch (e) { fail(e); } finally { loadFwList(); }
 });
 
 /* ---------- eventos da bandeja ---------- */
@@ -621,15 +947,28 @@ const ev = window.__TAURI__.event;
 ev.listen('novo-projeto', (e) => { go('painel'); setKind(e.payload); $('pname').focus(); });
 ev.listen('abrir-preferencias', () => go('ajustes'));
 ev.listen('abrir-processos', () => go('processos'));
+ev.listen('abrir-firewall', () => go('firewall'));
 ev.listen('sobre', () => { go('ajustes'); setTimeout(() => $('sobre').scrollIntoView({ behavior: 'smooth' }), 80); });
 ev.listen('erro', (e) => fail(e.payload));
 ev.listen('info', (e) => toast(e.payload, 'ok'));
+ev.listen('import-progresso', (e) => { $('dbmsg').textContent = `Importando… ${e.payload}%`; });
+// arrastar um .sql para a janela preenche a importação
+ev.listen('tauri://drag-drop', (e) => {
+  const lista = e.payload.paths || [], p = lista.find((x) => /\.sql$/i.test(x));
+  if (!p) { if (lista.length) toast('Para importar, arraste um arquivo .sql.', 'info'); return; }
+  go('bancos'); $('imp_path').value = p;
+  $('imp_db').value = p.split(/[\\/]/).pop().replace(/\.sql$/i, '').replace(/[^A-Za-z0-9_]/g, '_').slice(0, 64);
+  $('imp_db').focus(); $('imp_db').select();
+});
 
 window.__TAURI__.app.getVersion().then((v) => { $('ver').textContent = 'v' + v; $('ver2').textContent = 'v' + v; }).catch(() => {});
 invoke('vcredist_ok').then((ok) => { $('vc').hidden = ok; }).catch(() => {});
 refresh().catch(fail);
 loadProcs().catch(() => {});
-setInterval(() => refresh().catch(fail), 2000);
+setInterval(() => {
+  refresh().catch(fail);
+  if (document.body.dataset.view === 'logs' && $('log_vivo').checked && !logAnterior && !document.hidden) loadLog(true);
+}, 2000);
 </script>
 </body>
 </html>
