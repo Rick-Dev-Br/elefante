@@ -19,17 +19,22 @@
 
 ## ✨ O que ele faz
 
-- **Sites automáticos** — cada pasta em `C:\elefante\www` vira `http://<pasta>.lvh.me`, sem mexer no arquivo `hosts`. Se existir uma subpasta `public/`, ela vira a raiz do site.
+- **Sites automáticos** — cada pasta em `C:\elefante\www` vira `http://<pasta>.lvh.me`, sem precisar mexer no arquivo `hosts`. Cada site mostra o tipo do projeto (Laravel 12, Astro…) e avisa quando o PHP ativo não atende o que o `composer.json` pede. Se existir uma subpasta `public/`, ela vira a raiz do site; se ela não tiver página de entrada e existir `dist/index.html` (Astro, Vite), a raiz é o `dist/`.
 - **Apache ou Nginx** — troque nas Preferências ou pelo menu da bandeja. Mesmos sites, portas e certificado.
 - **HTTPS local** — CA própria instalada no repositório do usuário (sem admin) e um certificado com todos os sites. Funciona no Chrome e no Edge.
 - **Componentes com um clique** — Apache, Nginx, PHP, MariaDB, Composer, HeidiSQL e Mailpit baixados das fontes oficiais.
 - **Xdebug com um clique** — liga e desliga pelo app ou pela bandeja (baixa a DLL certa do xdebug.org na primeira vez).
-- **Novo projeto** — vazio, Laravel, Symfony ou WordPress, já com a pasta, o banco e o `.env` configurados.
+- **Troca de PHP pela janela** — versão ativa no Painel; em Ajustes, extensões, limites do `php.ini` e download de outras versões da lista oficial, com o sha256 conferido. Se o PHP reclamar da mudança, o `php.ini` volta como estava.
+- **Novo projeto** — vazio, Laravel, Symfony, WordPress ou clonado do Git, já com a pasta, o banco, as dependências e o `.env` configurados.
 - **Painel de processos** — `php artisan serve`, `npm run dev`, `queue:work`… liga e desliga por projeto, com log.
-- **Ferramentas de banco** — backup (um `.sql` por banco), importar `.sql` e trazer bancos de uma pasta de dados antiga (ex.: Laragon) sem alterar o original.
+- **Bancos de dados** — criar, copiar e apagar por banco (apagar salva um backup antes), backup automático uma vez por dia, restaurar sempre como banco novo, importar `.sql` arrastando o arquivo, e trazer bancos de uma pasta de dados antiga (ex.: Laragon) sem alterar o original.
+- **Logs ao vivo** — servidor web, PHP, MariaDB, Mailpit, processos e o `laravel.log` de cada projeto, com filtro, execução anterior e botão de limpar. Dá para registrar as consultas do MariaDB (só as lentas ou todas) sem instalar nada no projeto.
+- **Aviso de queda** — se um serviço ou processo para sozinho, a janela abre com o aviso e o fim do log.
 - **E-mails de teste** — Mailpit em `http://localhost:8025` (SMTP na porta `1025`).
 - **Bandeja do sistema** — menu com serviços, sites, troca de versão do PHP e opção de iniciar com o Windows.
 - **Quem está na porta?** — mostra qual programa ocupa a 80/443/3306 e permite encerrá-lo.
+- **PATH do Windows** — põe as versões ativas (PHP, Composer, MariaDB, Node, Apache, Nginx) no PATH do usuário, pelo menu **Ferramentas** ou sozinho ao trocar de versão (Ajustes → *Alterar variáveis de ambiente automaticamente*). Só mexe no que o próprio Elefante pôs; o resto do seu PATH fica igual. Não precisa de admin.
+- **Bloqueio de rede por versão** — bloqueia entrada e/ou saída de um executável específico (ex.: só o PHP 8.5, não o 8.4) no Firewall do Windows, para simular falta de internet. Veja abaixo.
 - **Migração do Laragon** — na primeira execução, aproveita as pastas de um Laragon já instalado.
 
 Tudo escuta só em `127.0.0.1`: nada fica exposto para a rede, e o app não envia dados para nenhum servidor.
@@ -50,6 +55,7 @@ O MariaDB vem com o usuário `root` **sem senha** (só aceita conexões da próp
 
 - **Porta 80/443/3306 em uso** — o app mostra qual programa está usando e deixa encerrar. Ou mude a porta nas Preferências.
 - **`*.lvh.me` não abre** — alguns roteadores bloqueiam domínios que apontam para `127.0.0.1`. Troque o DNS do Windows para `1.1.1.1` ou `8.8.8.8`.
+- **Sites sem internet** — `*.lvh.me` depende de DNS externo. Em **Sites**, o botão **Abrir N sites sem internet** acrescenta no arquivo `hosts` os sites que faltam, com a marca `#elefante`, e pede permissão de administrador. As linhas de outros programas ficam como estão.
 - **HTTPS no Firefox** — o Firefox usa o próprio repositório de certificados e não é coberto. Use Chrome ou Edge.
 
 ## 📦 Versões incluídas
@@ -89,6 +95,24 @@ Testes:
 cd src-tauri && cargo test
 ```
 
+O teste que cria regras de verdade no Firewall (e confere que só a versão bloqueada perde a internet) fica de fora do `cargo test` normal. Rode num terminal **como administrador**, com internet:
+
+```bash
+cd src-tauri && cargo test firewall_real -- --ignored
+```
+
+O teste do import de `.sql` também fica de fora: ele sobe um MariaDB descartável (pasta de dados nova no `%TEMP%`, porta livre) com o MariaDB de `C:\elefante\bin`. Não precisa de admin:
+
+```bash
+cd src-tauri && cargo test import_real -- --ignored
+```
+
+As ações por banco (copiar, apagar, restaurar, backup automático e registro de consultas) também têm um teste assim:
+
+```bash
+cd src-tauri && cargo test bancos_real -- --ignored
+```
+
 ## ⚙️ Configuração
 
 Na primeira execução é criado um `config.json` na pasta de dados do app (`%APPDATA%\dev.elefante.app`). Os principais campos:
@@ -104,8 +128,20 @@ Na primeira execução é criado um `config.json` na pasta de dados do app (`%AP
 | `mysql_port` | `3306`             | Porta do MariaDB                       |
 | `ssl`        | `true`             | Liga o HTTPS local                     |
 | `auto_start` | `false`            | Inicia os serviços ao abrir o app      |
+| `env_auto`   | `false`            | Trocar a versão ativa também atualiza o PATH do Windows |
+| `backups`    | `C:/elefante/backups` | Pasta dos backups de banco          |
+| `backup_auto` | `true`            | Um backup a cada 24 h com o MariaDB ligado; guarda os 5 últimos automáticos |
 
-Também dá pra mudar tudo isso pela tela de preferências. Bancos, certificados e logs também ficam nessa pasta.
+Também dá pra mudar tudo isso pela tela de preferências. Bancos, certificados e logs também ficam nessa pasta. Os backups ficam fora dela de propósito: ao desinstalar, a opção de apagar os dados do app remove essa pasta inteira.
+
+## 🛡️ Bloqueio de rede (Firewall)
+
+Na tela **Bloqueio de rede** (ou bandeja → Ferramentas), escolha a ferramenta, a versão instalada (ativa ou não) e a direção: **Entrada**, **Saída** ou **Ambas** (duas regras independentes). Também dá pra informar qualquer `.exe` (personalizado).
+
+- Cada regra fica presa ao **caminho do executável** escolhido. Trocar a versão ativa não move nada; se o `.exe` sumir, a regra avisa "executável não encontrado" e não é passada para outra versão.
+- As regras ficam no próprio Firewall (sobrevivem a reinícios), no grupo **Elefante**. Regras de outros programas nunca são lidas nem alteradas.
+- Criar, ativar, desativar, editar e remover pedem permissão de administrador (UAC). Listar não pede.
+- O Firewall do Windows **não filtra `127.0.0.1`**: o bloqueio corta a rede/internet do programa, mas os sites locais continuam abrindo.
 
 ## 🗂️ Estrutura
 
@@ -118,12 +154,15 @@ elefante/
     │   ├── apache.rs      # httpd.conf, vhosts e certificados
     │   ├── nginx.rs       # nginx.conf e php-cgi (alternativa ao Apache)
     │   ├── xdebug.rs      # Liga/desliga o Xdebug
-    │   ├── components.rs  # Download dos componentes
-    │   ├── project.rs     # Novo projeto (Laravel, Symfony, WordPress)
+    │   ├── phpini.rs      # Versão ativa, extensões e limites do PHP
+    │   ├── components.rs  # Download dos componentes e de outras versões do PHP
+    │   ├── project.rs     # Novo projeto (Laravel, Symfony, WordPress, Git) e etiquetas dos sites
     │   ├── procs.rs       # Painel de processos
-    │   ├── dbtools.rs     # Backup e importação de bancos
+    │   ├── dbtools.rs     # Ações por banco, backups, importação e registro de consultas
     │   ├── menu.rs        # Menu da bandeja
-    │   └── extras.rs      # Portas, VC++, autostart, Laragon, logs
+    │   ├── envpath.rs     # PATH do Windows com as versões ativas
+    │   ├── firewall.rs    # Bloqueio de rede por executável/versão
+    │   └── extras.rs      # Portas, VC++, autostart, Laragon, logs, arquivo hosts
     └── tauri.conf.json
 ```
 
