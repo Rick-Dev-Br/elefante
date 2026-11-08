@@ -2,15 +2,16 @@
 
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
+    io::{Read, Seek, SeekFrom},
     net::{SocketAddr, TcpListener, TcpStream},
     os::windows::process::CommandExt,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::Mutex,
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -20,9 +21,13 @@ use tauri::{
 mod apache;
 mod components;
 mod dbtools;
+mod envpath;
 mod extras;
+mod firewall;
+mod jobs;
 mod menu;
 mod nginx;
+mod phpini;
 mod procs;
 mod project;
 mod xdebug;
@@ -32,6 +37,8 @@ const SERVICES: [&str; 3] = ["apache", "mysql", "mailpit"];
 const MAILPIT_UI: u16 = 8025; // ponytail: portas fixas do Mailpit (interface web e SMTP)
 const MAILPIT_SMTP: u16 = 1025;
 const PHP_CGI: u16 = 9123; // php-cgi do Nginx (FastCGI), só em 127.0.0.1
+const ESPERA_PORTA: Duration = Duration::from_secs(15); // servidor web, Mailpit e php-cgi abrem bem antes disso
+const ESPERA_MARIADB: Duration = Duration::from_secs(60); // pode estar recuperando dados depois de uma queda
 
 // Editável em <app_data>/config.json (criado na primeira execução).
 #[derive(Serialize, Deserialize, Clone)]
@@ -50,6 +57,9 @@ struct Cfg {
     auto_start: bool, // iniciar os serviços quando o Elefante abre
     web: String,      // servidor web: "apache" ou "nginx" (o serviço continua com id "apache")
     nginx: String,
+    env_auto: bool, // trocar a versão também atualiza o PATH do Windows (envpath.rs)
+    backups: String,   // pasta dos backups de banco: fora da pasta de dados, que o desinstalador pode apagar
+    backup_auto: bool, // um backup a cada 24 h com o MariaDB ligado (dbtools.rs)
 }
 
 impl Default for Cfg {
@@ -69,6 +79,9 @@ impl Default for Cfg {
             auto_start: false,
             web: "apache".into(),
             nginx: "nginx-1.28.0".into(),
+            env_auto: false,
+            backups: "C:/elefante/backups".into(),
+            backup_auto: true,
         }
     }
 }
@@ -77,6 +90,14 @@ struct App {
     home: PathBuf,
     procs: Mutex<HashMap<String, Child>>, // serviços ("apache"...) e processos do painel ("proc:<id>")
     sites_sig: Mutex<String>,             // sites usados na última geração dos vhosts (p/ detectar pasta nova)
+    caidos: Mutex<Vec<String>>,           // quem parou sem ninguém pedir; o menu::watch avisa
+    iniciando: Mutex<HashSet<String>>,    // serviços subindo agora (a bandeja e a janela podem pedir juntas)
+}
+
+impl App {
+    fn new(home: PathBuf) -> Self {
+        App { home, procs: Mutex::default(), sites_sig: Mutex::default(), caidos: Mutex::default(), iniciando: Mutex::default() }
+    }
 }
 
 // Assinatura da lista de sites: muda quando uma pasta aparece, some ou muda de raiz.
@@ -89,7 +110,8 @@ struct Site {
     name: String,
     url: String,
     url_ssl: String,
-    root: String,
+    dir: String,  // pasta do projeto: Terminal, VS Code, Pasta e sugestão de Processos
+    root: String, // o que o servidor web entrega: a pasta do projeto, public/ ou dist/
 }
 
 #[derive(Serialize)]
@@ -102,6 +124,7 @@ struct Status {
     mysql_port: u16,
     ssl_ready: bool,
     web: String,
+    php: String,
     xdebug: bool,
     www: String,
     sites: Vec<Site>,
@@ -125,6 +148,28 @@ fn fwd(p: &Path) -> String {
     p.to_string_lossy().replace('\\', "/")
 }
 
+// Caminho do jeito do Windows (barra invertida), como vai pro PATH e pro Firewall.
+fn win_path(p: &Path) -> String {
+    p.to_string_lossy().replace('/', "\\")
+}
+
+// Para comparar caminhos: o Windows não diferencia maiúsculas, "/" de "\" nem a barra do fim.
+fn path_key(p: &str) -> String {
+    p.trim().replace('/', "\\").trim_end_matches('\\').to_ascii_lowercase()
+}
+
+// Pasta que o servidor web entrega. Laravel e parecidos: public/. Astro e Vite guardam só arquivos soltos em
+// public/ e geram o site em dist/: se public/ não tem página de entrada e dist/ tem, vale dist/.
+fn raiz_do_site(dir: &Path) -> PathBuf {
+    let public = dir.join("public");
+    if !public.is_dir() {
+        return dir.to_path_buf();
+    }
+    let dist = dir.join("dist");
+    let sem_entrada = !public.join("index.php").exists() && !public.join("index.html").exists();
+    if sem_entrada && dist.join("index.html").exists() { dist } else { public }
+}
+
 fn list_sites(c: &Cfg) -> Vec<Site> {
     let mut v: Vec<Site> = fs::read_dir(&c.www)
         .into_iter()
@@ -138,13 +183,14 @@ fn list_sites(c: &Cfg) -> Vec<Site> {
                 return None;
             }
             let dir = e.path();
-            let root = if dir.join("public").is_dir() { dir.join("public") } else { dir };
+            let root = raiz_do_site(&dir);
             let port = if c.http_port == 80 { String::new() } else { format!(":{}", c.http_port) };
             let sport = if c.https_port == 443 { String::new() } else { format!(":{}", c.https_port) };
             Some(Site {
                 url: format!("http://{name}.{}{port}", c.domain),
                 url_ssl: format!("https://{name}.{}{sport}", c.domain),
                 name,
+                dir: fwd(&dir),
                 root: fwd(&root),
             })
         })
@@ -153,40 +199,99 @@ fn list_sites(c: &Cfg) -> Vec<Site> {
     v
 }
 
+// Lê só o fim do arquivo: um laravel.log de 84 MB custa o mesmo que um de 84 KB. O tamanho vem do arquivo aberto;
+// o da listagem do Windows fica defasado enquanto outro processo escreve.
 fn tail_n(f: &Path, bytes: usize) -> String {
-    let s = String::from_utf8_lossy(&fs::read(f).unwrap_or_default()).to_string();
-    let n = s.len().saturating_sub(bytes);
-    s[s.char_indices().map(|(i, _)| i).find(|&i| i >= n).unwrap_or(0)..].trim().to_string()
+    let Ok(mut a) = fs::File::open(f) else { return String::new() };
+    let tam = a.seek(SeekFrom::End(0)).unwrap_or(0);
+    let ini = tam.saturating_sub(bytes as u64);
+    let mut buf = Vec::new();
+    if a.seek(SeekFrom::Start(ini)).is_err() || a.read_to_end(&mut buf).is_err() {
+        return String::new();
+    }
+    if ini == 0 {
+        return String::from_utf8_lossy(&buf).trim().to_string();
+    }
+    // Cortou no meio: pula o resto do caractere e, se a primeira quebra estiver perto, o resto da linha.
+    let corte = buf.iter().position(|b| b & 0xC0 != 0x80).unwrap_or(0);
+    let s = String::from_utf8_lossy(&buf[corte..]);
+    let linha = s.find('\n').filter(|&i| i < s.len() / 2).map_or(0, |i| i + 1);
+    s[linha..].trim().to_string()
 }
 
 fn tail(f: &Path) -> String {
     tail_n(f, 700)
 }
 
-fn spawn(mut cmd: Command, log: &Path) -> Result<Child, String> {
-    let f = fs::File::create(log).map_err(|e| e.to_string())?;
+// Onde fica a saída da execução anterior de um serviço ou processo (mysql.out -> mysql.anterior).
+fn log_anterior(log: &Path) -> PathBuf {
+    log.with_extension("anterior")
+}
+
+// Cria o processo com a saída no log, dentro de um job próprio (jobs.rs).
+fn lancar(mut cmd: Command, log: &Path) -> Result<Child, String> {
+    // Sem isso, religar depois de uma queda apagava o motivo dela.
+    // ponytail: guarda 1 execução; duas falhas seguidas ao religar já substituem a da queda
+    let _ = fs::rename(log, log_anterior(log));
+    // append: o botão Limpar zera o arquivo com o processo rodando, e ele segue escrevendo do começo, sem buraco de zeros
+    let f = fs::OpenOptions::new().create(true).append(true).open(log).map_err(|e| e.to_string())?;
     cmd.creation_flags(NO_WINDOW)
         .stdin(Stdio::null())
         .stdout(f.try_clone().map_err(|e| e.to_string())?)
         .stderr(f);
-    let mut ch = cmd.spawn().map_err(|e| e.to_string())?;
-    thread::sleep(Duration::from_millis(1500));
-    if let Ok(Some(st)) = ch.try_wait() {
-        let t = tail(log);
-        let dica = if t.contains("must be writable") || t.contains("already in use") {
-            "\n\nDica: outro MariaDB está usando esta pasta de dados (talvez outro Elefante aberto na bandeja)."
-        } else {
-            ""
-        };
-        return Err(format!("Encerrou logo ao iniciar ({st}):\n{t}{dica}"));
-    }
+    let ch = cmd.spawn().map_err(|e| e.to_string())?;
+    jobs::adotar(&ch);
     Ok(ch)
+}
+
+// Espera as portas abrirem; sem porta, só confere se o processo segue vivo até o limite.
+// Ok(true) = pronto. Ok(false) = passou do limite com o processo vivo. Err = ele morreu (e o job já foi fechado).
+fn esperar(ch: &mut Child, log: &Path, portas: &[u16], limite: Duration) -> Result<bool, String> {
+    let inicio = Instant::now();
+    loop {
+        if let Ok(Some(st)) = ch.try_wait() {
+            let t = tail(log);
+            let dica = if t.contains("must be writable") || t.contains("already in use") {
+                "\n\nDica: outro MariaDB está usando esta pasta de dados (talvez outro Elefante aberto na bandeja)."
+            } else {
+                ""
+            };
+            jobs::encerrar(ch); // fecha o job (e algum filho que tenha sobrado)
+            return Err(format!("Encerrou logo ao iniciar ({st}):\n{t}{dica}"));
+        }
+        if !portas.is_empty() && portas.iter().all(|&p| porta_aberta(p)) {
+            return Ok(true);
+        }
+        if inicio.elapsed() >= limite {
+            return Ok(portas.is_empty());
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+}
+
+// Sobe o processo e volta quando as portas abrirem. Passou do limite: encerra e devolve o motivo.
+fn spawn(cmd: Command, log: &Path, portas: &[u16]) -> Result<Child, String> {
+    let mut ch = lancar(cmd, log)?;
+    let limite = if portas.is_empty() { Duration::from_millis(1500) } else { ESPERA_PORTA };
+    if esperar(&mut ch, log, portas, limite)? {
+        return Ok(ch);
+    }
+    jobs::encerrar(&mut ch);
+    let lista = portas.iter().map(u16::to_string).collect::<Vec<_>>().join(", ");
+    Err(format!("O serviço ligou, mas a porta {lista} seguiu fechada por {} s. Confira o fim do log abaixo e inicie de novo.\n{}", limite.as_secs(), tail(log)))
+}
+
+fn porta_aberta(p: u16) -> bool {
+    TcpStream::connect_timeout(&SocketAddr::from(([127, 0, 0, 1], p)), Duration::from_millis(300)).is_ok()
 }
 
 // bind(0.0.0.0) não enxerga quem escuta só em 127.0.0.1 (ex.: MariaDB): testa conectar também
 fn in_use(p: u16) -> bool {
-    TcpListener::bind(("0.0.0.0", p)).is_err()
-        || TcpStream::connect_timeout(&SocketAddr::from(([127, 0, 0, 1], p)), Duration::from_millis(300)).is_ok()
+    TcpListener::bind(("0.0.0.0", p)).is_err() || porta_aberta(p)
+}
+
+fn portas_web(c: &Cfg) -> Vec<u16> {
+    if c.ssl { vec![c.http_port, c.https_port] } else { vec![c.http_port] }
 }
 
 // Trava de instância única: o 2º Elefante só pede ao 1º que mostre a janela e sai.
@@ -213,17 +318,27 @@ fn do_start(st: &App, svc: &str) -> Result<(), String> {
     if st.procs.lock().unwrap().contains_key(svc) {
         return Ok(());
     }
+    // Já tem um pedido subindo este serviço: sem isso, o 2º veria a porta ocupada pelo 1º e daria "Porta em uso".
+    if !st.iniciando.lock().unwrap().insert(svc.to_string()) {
+        return Ok(());
+    }
+    let r = iniciar(st, svc);
+    st.iniciando.lock().unwrap().remove(svc);
+    r
+}
+
+fn iniciar(st: &App, svc: &str) -> Result<(), String> {
     let c = load_cfg(&st.home);
     let mut ports = match svc {
-        "apache" if c.ssl => vec![c.http_port, c.https_port],
-        "apache" => vec![c.http_port],
+        "apache" => portas_web(&c),
         "mailpit" => vec![MAILPIT_UI, MAILPIT_SMTP],
         _ => vec![c.mysql_port],
     };
     if svc == "apache" && c.web == "nginx" {
+        do_stop(st, "php-cgi"); // sobrou de um Nginx que caiu: seguraria a porta
         ports.push(PHP_CGI);
     }
-    if let Some(port) = ports.into_iter().find(|&p| in_use(p)) {
+    if let Some(port) = ports.iter().copied().find(|&p| in_use(p)) {
         let quem = extras::port_owner(port).map(|o| format!(" por {} (PID {})", o.name, o.pid)).unwrap_or_default();
         return Err(format!("Porta {port} já está em uso{quem}. Feche esse programa (ou mude a porta nas Preferências)."));
     }
@@ -241,7 +356,7 @@ fn do_start(st: &App, svc: &str) -> Result<(), String> {
             let root = Path::new(&c.bin).join("apache").join(&c.apache);
             let mut cmd = Command::new(root.join("bin/httpd.exe"));
             cmd.arg("-f").arg(conf);
-            spawn(cmd, &logs.join("apache.out"))?
+            spawn(cmd, &logs.join("apache.out"), &ports)?
         }
         "mysql" => {
             let base = Path::new(&c.bin).join("mysql").join(&c.mysql);
@@ -265,9 +380,14 @@ fn do_start(st: &App, svc: &str) -> Result<(), String> {
                 "--bind-address=127.0.0.1".into(),
                 "--skip-name-resolve".into(),
                 "--character-set-server=utf8mb4".into(),
+                "--max-allowed-packet=1G".into(), // o padrão de 16 MB barra dump com linha grande
                 "--console".into(),
             ]);
-            spawn(cmd, &logs.join("mysql.out"))?
+            let log = logs.join("mysql.out");
+            let mut ch = lancar(cmd, &log)?;
+            // Passou do limite vivo: segue ligado. Pode estar recuperando dados e não deve ser encerrado no meio.
+            esperar(&mut ch, &log, &ports, ESPERA_MARIADB)?;
+            ch
         }
         "mailpit" => {
             let exe = mailpit_exe(&c).ok_or_else(|| format!("Mailpit não encontrado em {}/mailpit", c.bin))?;
@@ -280,7 +400,7 @@ fn do_start(st: &App, svc: &str) -> Result<(), String> {
                 "--database".into(),
                 fwd(&st.home.join("mailpit.db")),
             ]);
-            spawn(cmd, &logs.join("mailpit.out"))?
+            spawn(cmd, &logs.join("mailpit.out"), &ports)?
         }
         _ => return Err("serviço desconhecido".into()),
     };
@@ -294,7 +414,9 @@ fn do_stop(st: &App, svc: &str) {
     }
     let child = st.procs.lock().unwrap().remove(svc);
     let Some(mut ch) = child else { return };
-    if svc == "mysql" {
+    // MariaDB: pede pra desligar direito. Com o Windows desligando, processo novo (mysqladmin) falha
+    // com 0xc0000142 e mostra erro, então aí encerra direto.
+    if svc == "mysql" && !shutting_down() {
         let c = load_cfg(&st.home);
         let admin = Path::new(&c.bin).join("mysql").join(&c.mysql).join("bin/mysqladmin.exe");
         let _ = Command::new(admin)
@@ -303,29 +425,64 @@ fn do_stop(st: &App, svc: &str) {
             .status();
         for _ in 0..50 {
             if ch.try_wait().ok().flatten().is_some() {
-                return;
+                break;
             }
             thread::sleep(Duration::from_millis(100));
         }
     }
-    // Apache no Windows tem processo pai + filho: /T mata a árvore
-    let _ = Command::new("taskkill")
-        .args(["/PID", &ch.id().to_string(), "/T", "/F"])
-        .creation_flags(NO_WINDOW)
-        .status();
-    let _ = ch.wait();
+    // Apache/Nginx têm pai + filhos: o job encerra a árvore toda (sem abrir taskkill.exe)
+    jobs::encerrar(&mut ch);
+}
+
+#[link(name = "user32")]
+extern "system" {
+    fn GetSystemMetrics(index: i32) -> i32;
+}
+
+fn shutting_down() -> bool {
+    const SM_SHUTTINGDOWN: i32 = 0x2000;
+    unsafe { GetSystemMetrics(SM_SHUTTINGDOWN) != 0 }
 }
 
 fn running(st: &App, svc: &str) -> bool {
     let mut p = st.procs.lock().unwrap();
-    match p.get_mut(svc).map(|c| c.try_wait()) {
-        Some(Ok(None)) => true,
-        Some(_) => {
-            p.remove(svc);
-            false
-        }
-        None => false,
+    let saiu = match p.get_mut(svc) {
+        None => return false,
+        Some(ch) => ch.try_wait(),
+    };
+    if matches!(saiu, Ok(None)) {
+        return true;
     }
+    let mut ch = p.remove(svc).unwrap(); // acabou de ser achado acima
+    drop(p);
+    // Processo do painel que terminou com sucesso (ex.: npm run build) não caiu: só acabou.
+    if svc.starts_with("proc:") && matches!(saiu, Ok(Some(s)) if s.success()) {
+        return false;
+    }
+    jobs::encerrar(&mut ch); // filho que sobrou (o Apache tem pai + filhos) seguraria a porta
+    if !shutting_down() {
+        st.caidos.lock().unwrap().push(svc.to_string()); // do_stop tira do mapa antes: parar de propósito nunca chega aqui
+    }
+    false
+}
+
+// Texto do aviso quando algo para sozinho, com o fim do log de quem parou.
+fn aviso_de_queda(st: &App, c: &Cfg, svc: &str) -> String {
+    let logs = st.home.join("logs");
+    let web = if c.web == "nginx" { "Nginx" } else { "Apache" };
+    let (texto, log) = match svc {
+        "apache" => (format!("O {web} parou sozinho. Ligue de novo no Painel."), logs.join(format!("{}-error.log", web.to_lowercase()))),
+        "mysql" => ("O MariaDB parou sozinho. Ligue de novo no Painel.".to_string(), logs.join("mysql.out")),
+        "mailpit" => ("O Mailpit parou sozinho. Ligue de novo no Painel.".to_string(), logs.join("mailpit.out")),
+        "php-cgi" => ("O PHP do Nginx parou sozinho. Reinicie o Nginx no Painel.".to_string(), logs.join("php-cgi.out")),
+        x => {
+            let id = x.trim_start_matches("proc:");
+            let nome = procs::load(&st.home).into_iter().find(|p| p.id == id).map_or_else(|| id.to_string(), |p| p.name);
+            (format!("O processo \"{nome}\" parou com erro. Ligue de novo em Processos."), logs.join(format!("proc-{id}.log")))
+        }
+    };
+    let fim = tail(&log);
+    if fim.is_empty() { texto } else { format!("{texto} Se parar outra vez, o motivo costuma estar nestas últimas linhas:\n\n{fim}") }
 }
 
 #[tauri::command(async)]
@@ -341,6 +498,7 @@ fn status(st: State<App>) -> Status {
         ssl_ready: c.ssl && st.home.join("ssl/site.crt").exists(),
         sites: list_sites(&c),
         web: c.web.clone(),
+        php: c.php.clone(),
         xdebug: xdebug::ligado(&c),
         www: c.www,
     }
@@ -444,18 +602,27 @@ fn terminal(st: State<App>) -> Result<(), String> {
     open_terminal(&c, &c.www)
 }
 
-// PATH com php, composer, mariadb e node do Elefante na frente (terminal e processos usam o mesmo).
-fn tool_path(c: &Cfg) -> String {
+// Node "ativo": a 1ª pasta em <bin>/nodejs (não há escolha de versão do Node).
+fn node_dir(c: &Cfg) -> Option<PathBuf> {
+    fs::read_dir(Path::new(&c.bin).join("nodejs")).ok()?.flatten().map(|e| e.path()).find(|p| p.is_dir())
+}
+
+// php, composer, mariadb e node do Elefante (o PATH do terminal e o do Windows partem daqui).
+fn tool_dirs(c: &Cfg) -> Vec<PathBuf> {
     let b = Path::new(&c.bin);
     let mut dirs = vec![
         b.join("php").join(&c.php),
         b.join("composer"),
         b.join("mysql").join(&c.mysql).join("bin"),
     ];
-    if let Some(node) = fs::read_dir(b.join("nodejs")).ok().and_then(|mut d| d.find_map(|e| e.ok().filter(|e| e.path().is_dir()))) {
-        dirs.push(node.path());
-    }
-    dirs.iter()
+    dirs.extend(node_dir(c));
+    dirs
+}
+
+// PATH com php, composer, mariadb e node do Elefante na frente (terminal e processos usam o mesmo).
+fn tool_path(c: &Cfg) -> String {
+    tool_dirs(c)
+        .iter()
         .map(|d| d.to_string_lossy().to_string())
         .chain(std::env::var("PATH"))
         .collect::<Vec<_>>()
@@ -504,10 +671,10 @@ fn site_open(st: State<App>, name: String, what: String) -> Result<(), String> {
     let c = load_cfg(&st.home);
     let s = list_sites(&c).into_iter().find(|s| s.name == name).ok_or("Site não encontrado.")?;
     match what.as_str() {
-        "folder" => explorer(&s.root),
-        "terminal" => open_terminal(&c, &s.root),
+        "folder" => explorer(&s.dir),
+        "terminal" => open_terminal(&c, &s.dir),
         "code" => {
-            let ok = Command::new("cmd").args(["/c", "code", &s.root]).creation_flags(NO_WINDOW).status().map(|x| x.success()).unwrap_or(false);
+            let ok = Command::new("cmd").args(["/c", "code", &s.dir]).creation_flags(NO_WINDOW).status().map(|x| x.success()).unwrap_or(false);
             if ok { Ok(()) } else { Err("Não consegui abrir o VS Code (o comando 'code' não está no PATH).".into()) }
         }
         _ => Err("Ação desconhecida.".into()),
@@ -529,8 +696,8 @@ fn save_config(st: State<App>, cfg: Cfg) -> Result<(), String> {
     if cfg.web != "apache" && cfg.web != "nginx" {
         return Err("Servidor web inválido.".into());
     }
-    if cfg.bin.trim().is_empty() || cfg.www.trim().is_empty() {
-        return Err("Preencha as pastas bin e www.".into());
+    if cfg.bin.trim().is_empty() || cfg.www.trim().is_empty() || cfg.backups.trim().is_empty() {
+        return Err("Preencha as pastas bin, www e de backups.".into());
     }
     if cfg.domain.is_empty() || !cfg.domain.chars().all(|ch| ch.is_ascii_alphanumeric() || ".-".contains(ch)) {
         return Err("Domínio inválido (use letras, números, ponto e hífen).".into());
@@ -559,7 +726,7 @@ fn main() {
                 None => app.path().app_data_dir()?,
             };
             fs::create_dir_all(&home)?;
-            app.manage(App { home, procs: Mutex::new(HashMap::new()), sites_sig: Mutex::new(String::new()) });
+            app.manage(App::new(home));
 
             // aberto pelo Windows na inicialização: fica só na bandeja
             if std::env::args().any(|a| a == "--minimizado") {
@@ -596,6 +763,7 @@ fn main() {
                 })
                 .build(app)?;
             menu::watch(app.handle().clone());
+            dbtools::vigiar_backup(app.handle().clone());
             Ok(())
         })
         .on_window_event(|w, e| {
@@ -605,10 +773,11 @@ fn main() {
                 let _ = w.hide();
             }
         })
-        .invoke_handler(tauri::generate_handler![status, start, stop, reload_sites, terminal, open_url, open_www, open_db, ssl_trusted, trust_ca, project::create_project, components::components, components::install_component, site_open, get_config, save_config,
+        .invoke_handler(tauri::generate_handler![status, start, stop, reload_sites, terminal, open_url, open_www, open_db, ssl_trusted, trust_ca, project::create_project, project::project_preparar, project::sites_info, components::components, components::install_component, components::php_disponiveis, components::php_instalar, phpini::php_trocar, phpini::versoes, phpini::php_config, phpini::php_aplicar, site_open, get_config, save_config,
             procs::procs_list, procs::proc_save, procs::proc_delete, procs::proc_start, procs::proc_stop, procs::proc_log,
-            dbtools::db_list, dbtools::db_backup, dbtools::db_import_sql, dbtools::db_import_legacy,
-            extras::porta_dono, extras::encerrar_dono_porta, extras::vcredist_ok, extras::get_autostart, extras::set_autostart, extras::log_tail, xdebug::xdebug_toggle])
+            dbtools::db_list, dbtools::db_backup, dbtools::db_backup_um, dbtools::db_backups, dbtools::db_abrir_backups, dbtools::db_criar, dbtools::db_copiar, dbtools::db_apagar, dbtools::db_consultas, dbtools::db_consultas_estado, dbtools::db_import_sql, dbtools::db_import_legacy,
+            extras::porta_dono, extras::encerrar_dono_porta, extras::vcredist_ok, extras::get_autostart, extras::set_autostart, extras::log_tail, extras::log_lista, extras::log_limpar, extras::hosts_faltando, extras::hosts_completar, xdebug::xdebug_toggle,
+            firewall::fw_exes, firewall::fw_listar, firewall::fw_criar, firewall::fw_ligar, firewall::fw_editar, firewall::fw_remover])
         .build(tauri::generate_context!())
         .expect("erro ao iniciar o Elefante")
         .run(|app, ev| {
@@ -667,12 +836,181 @@ mod tests {
         let s = list_sites(&c);
         assert_eq!(s.iter().map(|x| x.name.as_str()).collect::<Vec<_>>(), vec!["api", "simples"]);
         assert!(s[0].root.ends_with("api/public") && s[1].root.ends_with("simples"));
+        assert!(s[0].dir.ends_with("/api"), "Terminal, VS Code e Pasta abrem o projeto, não o public");
         assert_eq!(s[0].url, "http://api.lvh.me");
         assert_eq!(s[0].url_ssl, "https://api.lvh.me");
         let antes = sites_signature(&c);
         fs::create_dir_all(h.join("novo")).unwrap();
         assert_ne!(antes, sites_signature(&c), "pasta nova muda a assinatura (é o que dispara o recarregar sozinho)");
         let _ = fs::remove_dir_all(&h);
+    }
+
+    #[test]
+    fn site_pronto_em_dist_so_vale_quando_public_nao_tem_entrada() {
+        let h = tmp("dist");
+        let arquivo = |p: &str| {
+            let f = h.join(p);
+            fs::create_dir_all(f.parent().unwrap()).unwrap();
+            fs::write(f, "x").unwrap();
+        };
+        arquivo("astro/public/favicon.svg");
+        let c = Cfg { www: fwd(&h), ..Cfg::default() };
+        let antes = sites_signature(&c);
+        arquivo("astro/dist/index.html");
+        assert_ne!(antes, sites_signature(&c), "o build muda a raiz: é o que recarrega o site sozinho");
+        arquivo("laravel/public/index.php");
+        arquivo("laravel/dist/index.html");
+        arquivo("html/public/index.html");
+        arquivo("html/dist/index.html");
+        arquivo("sem-public/index.php");
+        arquivo("sem-public/dist/index.html");
+        arquivo("so-assets/public/logo.png");
+        let raiz: HashMap<String, String> = list_sites(&c).into_iter().map(|s| (s.name, s.root)).collect();
+        assert!(raiz["astro"].ends_with("astro/dist"));
+        assert!(raiz["laravel"].ends_with("laravel/public"));
+        assert!(raiz["html"].ends_with("html/public"));
+        assert!(raiz["sem-public"].ends_with("/sem-public"), "sem public/, continua servindo a pasta do projeto");
+        assert!(raiz["so-assets"].ends_with("so-assets/public"), "sem dist/, public/ continua valendo");
+        let _ = fs::remove_dir_all(&h);
+    }
+
+    #[test]
+    fn iniciar_guarda_o_log_da_execucao_anterior() {
+        let h = tmp("log-anterior");
+        let log = h.join("mysql.out");
+        fs::write(&log, "motivo da queda").unwrap();
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/c", "echo novo"]);
+        let _ = spawn(cmd, &log, &[]); // sai logo: aqui só importam os arquivos
+        assert_eq!(fs::read_to_string(log_anterior(&log)).unwrap(), "motivo da queda");
+        assert!(fs::read_to_string(&log).unwrap().contains("novo"));
+        let _ = fs::remove_dir_all(&h);
+    }
+
+    #[test]
+    fn tail_le_so_o_fim_e_nao_quebra_acento() {
+        let h = tmp("tail");
+        let f = h.join("a.log");
+        assert_eq!(tail_n(&f, 10), "", "arquivo que não existe");
+        fs::write(&f, "  curto\n").unwrap();
+        assert_eq!(tail_n(&f, 100), "curto", "menor que o limite: vem tudo");
+        fs::write(&f, "linha antiga\nlinha nova\n").unwrap();
+        assert_eq!(tail_n(&f, 14), "linha nova", "começa em linha inteira");
+        // "ção" são 5 bytes: pedir 4 corta no meio do ç, e o resto dele não pode virar lixo
+        fs::write(&f, "ação").unwrap();
+        assert_eq!(tail_n(&f, 4), "ão");
+        // linha única maior que o limite: mantém o fim em vez de sumir com tudo
+        fs::write(&f, "x".repeat(500)).unwrap();
+        assert_eq!(tail_n(&f, 50), "x".repeat(50));
+        // quebra perto do fim: não joga fora quase tudo por causa dela
+        fs::write(&f, format!("{}\nfim", "x".repeat(500))).unwrap();
+        assert_eq!(tail_n(&f, 50), format!("{}\nfim", "x".repeat(46)));
+        // arquivo gigante: só o fim é lido
+        let grande = fs::File::create(&f).unwrap();
+        grande.set_len(1024 * 1024 * 1024).unwrap();
+        drop(grande);
+        let mut a = fs::OpenOptions::new().append(true).open(&f).unwrap();
+        std::io::Write::write_all(&mut a, b"\nultima linha\n").unwrap();
+        drop(a);
+        let inicio = Instant::now();
+        assert!(tail_n(&f, 64_000).ends_with("ultima linha"));
+        assert!(inicio.elapsed() < Duration::from_secs(1), "levou {:?}", inicio.elapsed());
+        let _ = fs::remove_dir_all(&h);
+    }
+
+    fn porta_sobrando() -> u16 {
+        TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port()
+    }
+
+    fn ping_demorado() -> Command {
+        let mut cmd = Command::new("ping");
+        cmd.args(["-n", "30", "127.0.0.1"]);
+        cmd
+    }
+
+    #[test]
+    fn iniciar_espera_a_porta_abrir() {
+        let h = tmp("porta");
+        let porta = porta_sobrando();
+        let mut cmd = Command::new("powershell");
+        cmd.args(["-NoProfile", "-Command", &format!("Start-Sleep -Milliseconds 800; $l=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,{porta}); $l.Start(); Start-Sleep 20")]);
+        let mut ch = spawn(cmd, &h.join("p.out"), &[porta]).unwrap();
+        assert!(porta_aberta(porta), "quando o spawn volta, a porta já atende");
+        jobs::encerrar(&mut ch);
+        let _ = fs::remove_dir_all(&h);
+    }
+
+    #[test]
+    fn processo_que_morre_esperando_a_porta_vira_erro_na_hora() {
+        let h = tmp("morre");
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/c", "echo faltou uma dll & exit 3"]);
+        let inicio = Instant::now();
+        let e = spawn(cmd, &h.join("p.out"), &[porta_sobrando()]).unwrap_err();
+        assert!(e.contains("faltou uma dll"), "{e}");
+        assert!(inicio.elapsed() < ESPERA_PORTA / 2, "não espera o limite inteiro");
+        let _ = fs::remove_dir_all(&h);
+    }
+
+    #[test]
+    fn limite_estourado_deixa_o_processo_vivo_para_quem_chamou_decidir() {
+        let h = tmp("limite");
+        let log = h.join("p.out");
+        let mut ch = lancar(ping_demorado(), &log).unwrap();
+        assert_eq!(esperar(&mut ch, &log, &[porta_sobrando()], Duration::from_millis(300)), Ok(false));
+        assert!(ch.try_wait().unwrap().is_none(), "é o caso do MariaDB em recuperação: segue ligado");
+        jobs::encerrar(&mut ch);
+        let _ = fs::remove_dir_all(&h);
+    }
+
+    #[test]
+    fn segundo_pedido_enquanto_o_primeiro_sobe_nao_faz_nada() {
+        let a = App::new(tmp("iniciando"));
+        a.iniciando.lock().unwrap().insert("mysql".into());
+        assert_eq!(do_start(&a, "mysql"), Ok(()));
+        assert!(a.procs.lock().unwrap().is_empty(), "quem está subindo é o 1º pedido");
+        let _ = fs::remove_dir_all(&a.home);
+    }
+
+    #[test]
+    fn quem_para_sozinho_vira_aviso() {
+        let a = App::new(tmp("caidos"));
+        let sai_com = |codigo: &str| Command::new("cmd").args(["/c", "exit", codigo]).creation_flags(NO_WINDOW).spawn().unwrap();
+        for (svc, codigo) in [("mysql", "0"), ("proc:erro", "1"), ("proc:acabou", "0")] {
+            a.procs.lock().unwrap().insert(svc.into(), sai_com(codigo));
+        }
+        thread::sleep(Duration::from_millis(600));
+        for svc in ["mysql", "proc:erro", "proc:acabou"] {
+            assert!(!running(&a, svc));
+        }
+        assert_eq!(*a.caidos.lock().unwrap(), ["mysql", "proc:erro"], "serviço nunca deveria sair; processo do painel só com erro");
+        assert!(!running(&a, "mysql"));
+        assert_eq!(a.caidos.lock().unwrap().len(), 2, "avisa uma vez só");
+        let _ = fs::remove_dir_all(&a.home);
+    }
+
+    #[test]
+    fn parar_de_proposito_nao_avisa() {
+        let a = App::new(tmp("parar"));
+        let ch = lancar(ping_demorado(), &a.home.join("p.out")).unwrap();
+        a.procs.lock().unwrap().insert("mailpit".into(), ch);
+        assert!(running(&a, "mailpit"));
+        do_stop(&a, "mailpit");
+        assert!(!running(&a, "mailpit"));
+        assert!(a.caidos.lock().unwrap().is_empty());
+        let _ = fs::remove_dir_all(&a.home);
+    }
+
+    #[test]
+    fn aviso_de_queda_traz_o_fim_do_log() {
+        let a = App::new(tmp("aviso"));
+        fs::create_dir_all(a.home.join("logs")).unwrap();
+        let c = Cfg::default();
+        assert_eq!(aviso_de_queda(&a, &c, "mailpit"), "O Mailpit parou sozinho. Ligue de novo no Painel.", "sem log, só a orientação");
+        fs::write(a.home.join("logs/mysql.out"), "InnoDB: disco cheio").unwrap();
+        let t = aviso_de_queda(&a, &c, "mysql");
+        assert!(t.starts_with("O MariaDB parou sozinho.") && t.ends_with("InnoDB: disco cheio"), "{t}");
+        let _ = fs::remove_dir_all(&a.home);
     }
 
     #[test]
@@ -683,6 +1021,15 @@ mod tests {
         let s = list_sites(&c);
         assert_eq!(s[0].url, "http://a.lvh.me:8080");
         assert_eq!(s[0].url_ssl, "https://a.lvh.me:8443");
+        let _ = fs::remove_dir_all(&h);
+    }
+
+    #[test]
+    fn opcao_do_path_vem_desligada_e_fica_salva() {
+        let h = tmp("env-auto");
+        assert!(!load_cfg(&h).env_auto, "padrão: NÃO (o Elefante não mexe no PATH)");
+        save_cfg(&h, &Cfg { env_auto: true, ..Cfg::default() }).unwrap();
+        assert!(load_cfg(&h).env_auto, "continua SIM depois de reabrir");
         let _ = fs::remove_dir_all(&h);
     }
 

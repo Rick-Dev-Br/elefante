@@ -21,7 +21,7 @@ fn sub(app: &AppHandle, text: &str, items: Vec<Item>) -> tauri::Result<Item> {
     Ok(Box::new(Submenu::with_items(app, text, true, &refs)?))
 }
 
-fn versions(dir: &Path) -> Vec<String> {
+pub fn versions(dir: &Path) -> Vec<String> {
     let mut v: Vec<String> = fs::read_dir(dir)
         .into_iter()
         .flatten()
@@ -34,7 +34,7 @@ fn versions(dir: &Path) -> Vec<String> {
 }
 
 // Só os PHP "thread safe" têm o módulo do Apache (php8apache2_4.dll); os outros servem só pro terminal.
-fn php_com_apache(c: &Cfg, v: &str) -> bool {
+pub fn php_com_apache(c: &Cfg, v: &str) -> bool {
     Path::new(&c.bin).join("php").join(v).join("php8apache2_4.dll").exists()
 }
 
@@ -84,6 +84,10 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         it(app, "db", "Banco de dados (HeidiSQL)", true)?,
         it(app, "dbbackup", "Backup de todos os bancos", my)?,
         it(app, "trust", "Confiar no HTTPS", true)?,
+        it(app, "firewall-ui", "Bloqueio de rede (Firewall)…", true)?,
+        sep(app)?,
+        it(app, "path:add", "Pôr as versões ativas no PATH do Windows", true)?,
+        it(app, "path:del", "Tirar o Elefante do PATH do Windows", true)?,
         sep(app)?,
         it(app, "folder:logs", "Pasta de logs", true)?,
     ])?;
@@ -206,6 +210,22 @@ fn agir(app: &AppHandle, id: &str) -> Result<(), String> {
             show(app);
             let _ = app.emit("abrir-processos", ());
         }
+        "firewall-ui" => {
+            show(app);
+            let _ = app.emit("abrir-firewall", ());
+        }
+        "path:add" | "path:del" => {
+            let add = id == "path:add";
+            let mudou = if add { envpath::aplicar(&st.home, &c)? } else { envpath::remover(&st.home)? };
+            let msg = match (add, mudou) {
+                (true, true) => "PATH do Windows atualizado com as versões ativas. Abra um terminal novo pra valer.",
+                (true, false) => "O PATH do Windows já estava com as versões ativas.",
+                (false, true) => "O Elefante saiu do PATH do Windows (o resto do PATH ficou igual).",
+                (false, false) => "O Elefante não tinha nada no PATH do Windows.",
+            };
+            show(app);
+            let _ = app.emit("info", msg);
+        }
         "dbbackup" => {
             let msg = dbtools::db_backup(app.state::<App>())?;
             show(app);
@@ -286,16 +306,7 @@ fn agir(app: &AppHandle, id: &str) -> Result<(), String> {
             show(app);
             let _ = app.emit("novo-projeto", &x[4..]);
         }
-        x if x.starts_with("php:") => {
-            let v = &x[4..];
-            if !versions(&b.join("php")).iter().any(|n| n == v) || (!ngx && !php_com_apache(&c, v)) {
-                return Err(format!("{v} não tem o módulo do Apache (php8apache2_4.dll)."));
-            }
-            let mut novo = c.clone();
-            novo.php = v.to_string();
-            save_cfg(&st.home, &novo)?;
-            do_reload(&st)?; // se o Apache estiver rodando, reinicia já com o PHP novo
-        }
+        x if x.starts_with("php:") => phpini::trocar_php(&st, &c, &x[4..])?,
         _ => {}
     }
     Ok(())
@@ -306,11 +317,37 @@ pub fn watch(app: AppHandle) {
     thread::spawn(move || {
         let mut ultimo = String::new();
         let mut visto = String::new(); // assinatura de sites vista no ciclo anterior (espera estabilizar)
+        let mut env_visto = String::new();
         loop {
             thread::sleep(Duration::from_secs(2));
             let st = app.state::<App>();
             let c = load_cfg(&st.home);
             let b = Path::new(&c.bin);
+
+            // Serviço ou processo que parou sem ninguém pedir: abre a janela com o aviso e o fim do log.
+            if c.web == "nginx" {
+                running(&st, "php-cgi"); // só este laço olha o php-cgi; o resto já é olhado no fim do ciclo
+            }
+            let caidos = std::mem::take(&mut *st.caidos.lock().unwrap());
+            for svc in caidos {
+                erro(&app, &aviso_de_queda(&st, &c, &svc));
+            }
+
+            // Versão ativa trocada (bandeja, Preferências ou config.json à mão) com a opção do PATH em SIM:
+            // atualiza o PATH do Windows. Em NÃO, nunca mexe. Também roda ao abrir o app.
+            let env = format!("{}{:?}", c.env_auto, envpath::pastas(&c));
+            if env != env_visto {
+                env_visto = env;
+                if c.env_auto {
+                    match envpath::aplicar(&st.home, &c) {
+                        Ok(true) => {
+                            let _ = app.emit("info", "PATH do Windows atualizado com as versões ativas.");
+                        }
+                        Ok(false) => {}
+                        Err(e) => erro(&app, &format!("Não consegui atualizar o PATH do Windows: {e}")),
+                    }
+                }
+            }
 
             // pasta nova (ou removida) em www com o Apache no ar: refaz os sites sozinho.
             // Só age quando a lista ficou igual em 2 ciclos seguidos, p/ não reiniciar no meio de uma cópia.

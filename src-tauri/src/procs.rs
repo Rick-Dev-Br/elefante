@@ -56,7 +56,7 @@ pub fn start_proc(st: &App, id: &str) -> Result<(), String> {
     // raw_arg: o cmd /c precisa receber a linha de comando do jeito que você digitou (aspas, &&, etc.)
     let mut cmd = Command::new("cmd");
     cmd.raw_arg(format!("/c {}", p.cmd)).env("PATH", tool_path(&c)).current_dir(&p.cwd);
-    let ch = spawn(cmd, &logs.join(format!("proc-{id}.log")))?;
+    let ch = spawn(cmd, &logs.join(format!("proc-{id}.log")), &[])?;
     st.procs.lock().unwrap().insert(key(id), ch);
     Ok(())
 }

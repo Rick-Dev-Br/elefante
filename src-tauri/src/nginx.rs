@@ -96,12 +96,12 @@ pub fn start(st: &App, c: &Cfg, logs: &Path) -> Result<Child, String> {
     let mut cgi = Command::new(php.join("php-cgi.exe"));
     cgi.arg("-b").arg(format!("127.0.0.1:{PHP_CGI}")).arg("-c").arg(php.join("php.ini"));
     cgi.env("PHP_FCGI_MAX_REQUESTS", "0"); // sem isso ele encerra sozinho a cada 500 requisições
-    let ch = spawn(cgi, &logs.join("php-cgi.out"))?;
+    let ch = spawn(cgi, &logs.join("php-cgi.out"), &[PHP_CGI])?;
     st.procs.lock().unwrap().insert("php-cgi".into(), ch);
 
     let root = Path::new(&c.bin).join("nginx").join(&c.nginx);
     let mut cmd = Command::new(root.join("nginx.exe"));
     cmd.arg("-p").arg(format!("{}/", fwd(&st.home.join("nginx"))));
     cmd.arg("-c").arg(fwd(&conf)).arg("-e").arg(fwd(&logs.join("nginx-error.log")));
-    spawn(cmd, &logs.join("nginx.out")).inspect_err(|_| do_stop(st, "php-cgi"))
+    spawn(cmd, &logs.join("nginx.out"), &portas_web(c)).inspect_err(|_| do_stop(st, "php-cgi"))
 }
