@@ -101,11 +101,14 @@ pub fn write_apache(home: &Path, c: &Cfg) -> Result<PathBuf, String> {
         String::new()
     };
 
+    // LoadFile: o Windows procura o php8ts.dll primeiro na pasta do httpd.exe. Se lá tiver o de outra versão
+    // (o Laragon copia pra lá ao trocar de PHP), o Apache cai ao iniciar. Carregando antes pelo caminho, vale o certo.
     let conf = format!(
         r#"ServerRoot "{root}"
 Listen 127.0.0.1:{port}
 ServerName localhost:{port}
 {mods}{ssl_conf}
+LoadFile "{php}/php8ts.dll"
 LoadModule php_module "{php}/php8apache2_4.dll"
 PHPIniDir "{php}"
 AddHandler application/x-httpd-php .php
