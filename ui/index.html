@@ -149,6 +149,8 @@
   .bk summary::-webkit-details-marker { display:none } .bk summary:hover { background:var(--hover) }
   .bk summary::before { content:"›"; color:var(--subtle); font-size:15px; line-height:1; transition:transform var(--duration-fast) var(--ease-out) } .bk[open] summary::before { transform:rotate(90deg) }
   .bk:last-child:not([open]) summary { border-bottom:0 } .bk summary .sp { flex:1 } .bk summary b { font-weight:600 }
+  .svc-grid { display:grid; grid-template-columns:minmax(120px,1fr) minmax(170px,210px) 92px auto 92px; gap:10px 12px; align-items:center; padding:16px; background:var(--surface); border:1px solid var(--border); border-radius:12px }
+  .svc-grid > span { color:var(--muted); font-size:12px } .svc-grid > .cab { color:var(--subtle); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.06em }
   .exts { display:grid; grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); gap:2px 12px; padding:12px 16px; background:var(--surface); border:1px solid var(--border); border-radius:12px }
 
   /* ---------- sites ---------- */
@@ -218,6 +220,7 @@
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4-4"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/><path d="m9.5 9.5 5 5M14.5 9.5l-5 5"/></symbol>
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 12.5 9 5 9-5"/><path d="m3 17 9 5 9-5"/></symbol>
   <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3.3 8 8.7 5 8.7-5M12 13v8"/></symbol>
 </svg>
 
@@ -241,7 +244,7 @@
     </nav>
     <div class="rail-foot">
       <button class="nav" id="theme" aria-label="Alternar tema claro e escuro"><svg class="ic" id="theme-ic"><use href="#i-sun"/></svg><span id="theme-tx">Tema claro</span></button>
-      <div class="sign">Criado por <b>Rick-dev</b><br>© 2026</div>
+      <div class="sign">Criado por <b>Rick-Dev-Br</b><br>© 2026</div>
     </div>
   </aside>
 
@@ -256,14 +259,20 @@
       <svg class="ic"><use href="#i-alert"/></svg>
       <div>Falta o <b>Visual C++ Redistributable 2015-2022 (x64)</b>, que o Apache, o PHP e o MariaDB precisam. <a data-url="https://aka.ms/vs/17/release/vc_redist.x64.exe">Baixar da Microsoft</a>, instalar e reabrir o Elefante.</div>
     </div>
+    <div class="banner" id="php_patch" hidden>
+      <svg class="ic"><use href="#i-download"/></svg>
+      <div id="php_patch_tx"></div>
+    </div>
 
     <!-- ===== PAINEL ===== -->
     <section class="view" id="v-painel">
       <h2>Serviços</h2>
       <div class="group">
-        <div class="row-i" id="s-apache"><div class="ico-tile"><svg class="ic"><use href="#i-globe"/></svg><i class="st"></i></div><div class="grow"><b id="n-apache">Apache + PHP</b><small id="p-apache">…</small></div><button class="switch" role="switch" aria-checked="false" aria-label="Apache" data-svc="apache"></button></div>
+        <div class="row-i" id="s-apache"><div class="ico-tile"><svg class="ic"><use href="#i-globe"/></svg><i class="st"></i></div><div class="grow"><b>Apache</b><small id="p-apache">…</small></div><button class="switch" role="switch" aria-checked="false" aria-label="Apache" data-svc="apache"></button></div>
+        <div class="row-i" id="s-nginx"><div class="ico-tile"><svg class="ic"><use href="#i-globe"/></svg><i class="st"></i></div><div class="grow"><b>Nginx</b><small id="p-nginx">…</small></div><button class="switch" role="switch" aria-checked="false" aria-label="Nginx" data-svc="nginx"></button></div>
         <div class="row-i" id="s-php"><div class="ico-tile"><svg class="ic"><use href="#i-box"/></svg></div><div class="grow"><b>PHP</b><small>Versão usada pelo servidor web, pelo terminal e pelos processos</small></div><select class="field" id="php_ver" aria-label="Versão do PHP" style="width:auto;max-width:270px"></select></div>
         <div class="row-i" id="s-mysql"><div class="ico-tile"><svg class="ic"><use href="#i-db"/></svg><i class="st"></i></div><div class="grow"><b>MariaDB</b><small id="p-mysql">…</small></div><button class="switch" role="switch" aria-checked="false" aria-label="MariaDB" data-svc="mysql"></button></div>
+        <div class="row-i" id="s-redis"><div class="ico-tile"><svg class="ic"><use href="#i-layers"/></svg><i class="st"></i></div><div class="grow"><b>Redis</b><small id="p-redis">…</small></div><button class="switch" role="switch" aria-checked="false" aria-label="Redis" data-svc="redis"></button></div>
         <div class="row-i" id="s-mailpit"><div class="ico-tile"><svg class="ic"><use href="#i-mail"/></svg><i class="st"></i></div><div class="grow"><b>Mailpit</b><small id="p-mailpit">…</small></div><button class="switch" role="switch" aria-checked="false" aria-label="Mailpit" data-svc="mailpit"></button></div>
         <div class="row-i" id="s-xdebug"><div class="ico-tile"><svg class="ic"><use href="#i-code"/></svg><i class="st"></i></div><div class="grow"><b>Xdebug</b><small id="p-xdebug">…</small></div><button class="switch" role="switch" aria-checked="false" aria-label="Xdebug" id="xdebug"></button></div>
       </div>
@@ -355,9 +364,10 @@
     <section class="view" id="v-logs">
       <div class="toolbar wrap">
         <select class="field" id="logsel" aria-label="Qual log">
-          <optgroup label="Servidor web"><option value="web-error">Servidor web · erros</option><option value="web-access">Servidor web · acessos</option></optgroup>
+          <optgroup label="Servidor web"><option value="apache-error">Apache · erros</option><option value="apache-access">Apache · acessos</option><option value="nginx-error">Nginx · erros</option><option value="nginx-access">Nginx · acessos</option></optgroup>
           <option value="php">PHP</option>
           <optgroup label="MariaDB"><option value="mysql">MariaDB · serviço</option><option value="mysql-lentas">MariaDB · consultas lentas</option><option value="mysql-consultas">MariaDB · todas as consultas</option></optgroup>
+          <option value="redis">Redis</option>
           <option value="mailpit">Mailpit</option>
         </select>
         <input class="field" id="log_q" placeholder="Filtrar linhas…" spellcheck="false" aria-label="Filtrar linhas do log" style="max-width:180px">
@@ -394,21 +404,21 @@
 
     <!-- ===== AJUSTES ===== -->
     <section class="view" id="v-ajustes">
-      <h2>Pastas e portas</h2>
+      <h2>Pastas e versões</h2>
       <div class="form-grid">
         <label for="p_www">Pasta www</label><input class="field" id="p_www" spellcheck="false">
         <label for="p_bin">Pasta bin</label><input class="field" id="p_bin" spellcheck="false">
         <label for="p_backups">Pasta de backups</label><input class="field" id="p_backups" spellcheck="false">
-        <label for="p_web">Servidor web</label><select class="field" id="p_web"><option value="apache">Apache</option><option value="nginx">Nginx</option></select>
-        <label for="p_nginx">Versão do Nginx</label><select class="field" id="p_nginx"></select>
         <label for="p_apache">Versão do Apache</label><select class="field" id="p_apache"></select>
+        <label for="p_nginx">Versão do Nginx</label><select class="field" id="p_nginx"></select>
         <label for="p_php">Versão do PHP</label><select class="field" id="p_php"></select>
         <label for="p_mysql">Versão do MariaDB</label><select class="field" id="p_mysql"></select>
-        <label for="p_http">Porta HTTP</label><input class="field" id="p_http" type="number" inputmode="numeric">
-        <label for="p_https">Porta HTTPS</label><input class="field" id="p_https" type="number" inputmode="numeric">
-        <label for="p_mysqlp">Porta MariaDB</label><input class="field" id="p_mysqlp" type="number" inputmode="numeric">
         <label for="p_domain">Domínio dos sites</label><input class="field" id="p_domain" spellcheck="false">
       </div>
+      <h2>Serviços e portas</h2>
+      <div class="svc-grid" id="svcs"></div>
+      <p class="sub" style="margin:10px 0 0">Marcados sobem com “Iniciar tudo”. Apache e Nginx podem rodar juntos, cada um nas suas portas; os links dos sites usam as do Apache, ou as do Nginx quando só ele está marcado.<br>
+        127.0.0.1 abre só neste computador. 0.0.0.0 abre também para outros aparelhos da sua rede: na primeira vez o Windows pergunta se libera no Firewall, e do celular o site abre pelo IP mostrado no Painel (os endereços .lvh.me só funcionam aqui). MariaDB e Redis vêm sem senha: deixe os dois em 127.0.0.1, a não ser numa rede de confiança.</p>
       <h2>Comportamento</h2>
       <div class="form-grid">
         <span>HTTPS</span><label class="check"><input type="checkbox" id="p_ssl"> Sites também em https://</label>
@@ -441,7 +451,7 @@
       <div class="group" id="comps"></div>
 
       <h2>Sobre</h2>
-      <div class="group" id="sobre"><div class="row-i"><div class="ico-tile" style="color:var(--accent-fg)"><svg class="ic"><use href="#i-box"/></svg></div><div class="grow"><b>Elefante <span id="ver2"></span></b><small>Criado por Rick-dev · © 2026 Rick-dev. Todos os direitos reservados.</small></div></div></div>
+      <div class="group" id="sobre"><div class="row-i"><div class="ico-tile" style="color:var(--accent-fg)"><svg class="ic"><use href="#i-box"/></svg></div><div class="grow"><b>Elefante <span id="ver2"></span></b><small>Criado por Rick-Dev-Br · © 2026 Rick-Dev-Br. Todos os direitos reservados.</small></div></div></div>
     </section>
   </main>
 </div>
@@ -509,29 +519,33 @@ $('theme').onclick = () => setTheme(document.documentElement.dataset.theme === '
 setTheme(document.documentElement.dataset.theme, false);
 
 /* ---------- serviços ---------- */
+const SERVICOS = ['mysql', 'redis', 'apache', 'nginx', 'mailpit']; // ordem de subida (a mesma do Elefante)
+const tudoNoAr = (s) => s.iniciar.length > 0 && s.iniciar.every((x) => s[x]);
+// "ip:porta" de cada porta. Quem escuta em 0.0.0.0 aparece com o IP deste PC na rede: é o que se abre de outro aparelho.
+function enderecos(s, svc) {
+  const l = s.enderecos[svc] || [], rede = l.length > 0 && l[0].startsWith('0.0.0.0:');
+  return l.map((e) => (rede && s.ip_rede ? s.ip_rede + e.slice(7) : e)).join(' · ') + (rede ? ' · aberto na rede local' : '');
+}
 async function refresh() {
   if (busy) return;
   const s = cur = await invoke('status');
-  const lista = ['apache', 'mysql'].concat(s.mailpit_ok ? ['mailpit'] : []);
-  const on = lista.filter((x) => s[x]).length;
+  const lista = s.iniciar, on = lista.filter((x) => s[x]).length;
   $('summary').dataset.s = on === 0 ? 'none' : on === lista.length ? 'all' : 'some';
   $('summary-tx').textContent = on === 0 ? 'Tudo parado' : on === lista.length ? 'Tudo no ar' : `${on} de ${lista.length} no ar`;
-  const tudo = s.apache && s.mysql;
+  const tudo = tudoNoAr(s);
   $('all-tx').textContent = tudo ? 'Parar tudo' : 'Iniciar tudo';
   $('all').classList.toggle('primary', !tudo); $('all').classList.toggle('danger', tudo); // laranja = ação principal; parar = perigo
-  for (const svc of ['apache', 'mysql', 'mailpit']) {
+  for (const svc of SERVICOS) {
     const row = $('s-' + svc), sw = row.querySelector('.switch'), ligado = !!s[svc];
-    row.classList.toggle('on', ligado); sw.setAttribute('aria-checked', ligado);
-    const porta = svc === 'apache' ? `porta ${s.http_port}` : svc === 'mysql' ? `porta ${s.mysql_port}` : 'SMTP 1025 · web 8025';
-    $('p-' + svc).textContent = svc === 'mailpit' && !s.mailpit_ok ? 'não encontrado em bin\\mailpit' : `${ligado ? 'rodando' : 'parado'} · ${porta}`;
-    if (svc === 'mailpit') sw.disabled = !s.mailpit_ok;
+    const falta = (svc === 'mailpit' && !s.mailpit_ok) || (svc === 'redis' && !s.redis_ok);
+    row.classList.toggle('on', ligado); sw.setAttribute('aria-checked', ligado); sw.disabled = falta;
+    $('p-' + svc).textContent = falta ? `não encontrado em bin\\${svc} · instale em Ajustes → Componentes` : `${ligado ? 'rodando' : 'parado'} · ${enderecos(s, svc)}`;
   }
   $('s-xdebug').classList.toggle('on', s.xdebug); $('xdebug').setAttribute('aria-checked', s.xdebug);
   $('p-xdebug').textContent = s.xdebug ? 'ligado · porta 9003 · use ?XDEBUG_TRIGGER=1' : 'desligado';
-  $('n-apache').textContent = (s.web === 'nginx' ? 'Nginx' : 'Apache') + ' + PHP';
   $('c-sites').textContent = s.sites.length;
   const sig = JSON.stringify(s.sites) + s.ssl_ready; if (sig !== sitesSig) { sitesSig = sig; renderSites(); if (document.body.dataset.view === 'sites') loadSitesInfo(); }
-  const phpS = s.php + s.web; if (phpS !== phpSig) { phpSig = phpS; loadPhpPainel().catch(fail); }
+  const phpS = s.php + s.usa_apache; if (phpS !== phpSig) { phpSig = phpS; loadPhpPainel().catch(fail); }
   $('ssl').hidden = !s.ssl_ready; if (s.ssl_ready && trusted === null) checkTrust();
 }
 
@@ -548,12 +562,13 @@ document.addEventListener('click', async (ev) => {
     else if (t.id === 'all') {
       busy++; t.disabled = true; t.classList.add('loading');
       try {
-        const parar = cur.apache && cur.mysql;
-        for (const svc of parar ? ['mailpit', 'apache', 'mysql'] : ['mysql', 'apache', 'mailpit']) { if (svc === 'mailpit' && !cur.mailpit_ok) continue; await invoke(parar ? 'stop' : 'start', { svc }); }
+        // Parar leva também o que foi ligado à mão sem estar marcado; iniciar sobe só os marcados
+        const parar = tudoNoAr(cur);
+        for (const svc of parar ? SERVICOS.filter((x) => cur[x]).reverse() : cur.iniciar) await invoke(parar ? 'stop' : 'start', { svc });
       } catch (e) { fail(e); } finally { busy--; t.disabled = false; t.classList.remove('loading'); refresh().catch(fail); }
     }
     else if (t.id === 'web') await invoke('open_url', { url: `http://localhost:${cur.http_port}/` });
-    else if (t.id === 'mail') await invoke('open_url', { url: 'http://127.0.0.1:8025/' });
+    else if (t.id === 'mail') await invoke('open_url', { url: `http://127.0.0.1:${cur.mailpit_web_port}/` });
     else if (t.id === 'term') await invoke('terminal');
     else if (t.id === 'www') await invoke('open_www');
     else if (t.id === 'db' || t.id === 'db2') await invoke('open_db');
@@ -737,7 +752,7 @@ $('db_import').onclick = (e) => dbAct(e.currentTarget, 'db_import_sql', { path: 
 $('db_legacy').onclick = (e) => dbAct(e.currentTarget, 'db_import_legacy', { path: $('leg_path').value });
 
 /* ---------- logs ---------- */
-let logAtual = 'web-error', logAnterior = false, logTexto = '';
+let logAtual = 'apache-error', logAnterior = false, logTexto = '';
 const TIPO_CONSULTA = { 'mysql-lentas': 'lentas', 'mysql-consultas': 'todas' };
 function desenhaLog(irProFim) {
   const o = $('logout'), q = $('log_q').value.trim().toLowerCase();
@@ -753,7 +768,7 @@ async function loadLog(auto = false) {
   logTexto = t; desenhaLog(!auto);
 }
 async function botoesDoLog() {
-  $('log_prev').hidden = !(logAtual === 'mysql' || logAtual === 'mailpit' || logAtual.startsWith('proc:')); // só esses recomeçam o arquivo a cada início
+  $('log_prev').hidden = !(['mysql', 'redis', 'mailpit'].includes(logAtual) || logAtual.startsWith('proc:')); // só esses recomeçam o arquivo a cada início
   $('log_prev_tx').textContent = logAnterior ? 'Execução atual' : 'Execução anterior';
   $('log_limpar').hidden = logAnterior;
   const tipo = TIPO_CONSULTA[logAtual]; $('log_reg').hidden = !tipo; if (!tipo) return;
@@ -765,7 +780,7 @@ async function abrirLogs() {
   s.querySelectorAll('optgroup[data-din]').forEach((x) => x.remove());
   const grupo = (rotulo, ops) => ops.length ? `<optgroup data-din label="${esc(rotulo)}">${ops.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('')}</optgroup>` : '';
   s.insertAdjacentHTML('beforeend', grupo('Projetos (log do Laravel)', l.sites.map((n) => ['site:' + n, n])) + grupo('Processos', l.procs.map((p) => ['proc:' + p.id, p.nome])));
-  s.value = logAtual; if (s.value !== logAtual) { logAtual = 'web-error'; s.value = logAtual; }
+  s.value = logAtual; if (s.value !== logAtual) { logAtual = 'apache-error'; s.value = logAtual; }
   botoesDoLog(); loadLog();
 }
 $('logsel').addEventListener('change', (e) => { logAtual = e.target.value; logAnterior = false; botoesDoLog(); loadLog(); });
@@ -793,11 +808,28 @@ function opcoesDeVersao(id, lista, atual) {
   $(id).innerHTML = l.map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
   $(id).value = atual;
 }
+// Serviços e portas: [id, nome, campos de porta do config.json, rótulo da 2ª porta]
+const SVC_PORTAS = [
+  ['apache', 'Apache', ['http_port', 'https_port'], 'HTTPS'],
+  ['nginx', 'Nginx', ['nginx_http_port', 'nginx_https_port'], 'HTTPS'],
+  ['mysql', 'MariaDB', ['mysql_port']],
+  ['redis', 'Redis', ['redis_port']],
+  ['mailpit', 'Mailpit', ['mailpit_smtp_port', 'mailpit_web_port'], 'Web'],
+];
+const campoPorta = (p, rotulo) => `<input class="field" id="p_${p}" type="number" min="1" max="65535" inputmode="numeric" aria-label="${rotulo}">`;
+$('svcs').innerHTML = '<span class="cab">Sobe no Iniciar</span><span class="cab">Endereço</span><span class="cab">Porta</span><span></span><span></span>' +
+  SVC_PORTAS.map(([id, nome, [p1, p2], rot]) => `<label class="check"><input type="checkbox" id="sv_${id}"> ${nome}</label>` +
+    `<select class="field" id="ip_${id}" aria-label="Endereço do ${nome}"><option value="127.0.0.1">127.0.0.1 · só este PC</option><option value="0.0.0.0">0.0.0.0 · rede local</option></select>` +
+    campoPorta(p1, `Porta do ${nome}`) + (p2 ? `<span>${rot}</span>${campoPorta(p2, `Porta ${rot} do ${nome}`)}` : '<span></span><span></span>')).join('');
 async function loadPrefs() {
   const [c, v] = await Promise.all([invoke('get_config'), invoke('versoes')]);
-  $('p_www').value = c.www; $('p_bin').value = c.bin; $('p_backups').value = c.backups; $('p_web').value = c.web;
+  $('p_www').value = c.www; $('p_bin').value = c.bin; $('p_backups').value = c.backups;
   opcoesDeVersao('p_apache', v.apache, c.apache); opcoesDeVersao('p_nginx', v.nginx, c.nginx); opcoesDeVersao('p_php', v.php.map((p) => p.nome), c.php); opcoesDeVersao('p_mysql', v.mysql, c.mysql);
-  $('p_http').value = c.http_port; $('p_https').value = c.https_port; $('p_mysqlp').value = c.mysql_port;
+  for (const [id, , portas] of SVC_PORTAS) {
+    $('sv_' + id).checked = (c.iniciar || []).includes(id);
+    $('ip_' + id).value = c.escuta[id] || '127.0.0.1';
+    portas.forEach((p) => { $('p_' + p).value = c[p]; });
+  }
   $('p_domain').value = c.domain; $('p_ssl').checked = c.ssl; $('p_auto').checked = c.auto_start; $('p_envauto').checked = c.env_auto; $('p_bauto').checked = c.backup_auto;
   $('p_win').checked = await invoke('get_autostart');
 }
@@ -807,11 +839,17 @@ $('p_win').addEventListener('change', async () => {
 });
 $('saveprefs').addEventListener('click', async () => {
   $('pmsg').textContent = '';
+  const cfg = {
+    www: $('p_www').value.trim(), bin: $('p_bin').value.trim(), backups: $('p_backups').value.trim(), apache: $('p_apache').value, nginx: $('p_nginx').value, php: $('p_php').value, mysql: $('p_mysql').value,
+    domain: $('p_domain').value.trim(), ssl: $('p_ssl').checked, auto_start: $('p_auto').checked, env_auto: $('p_envauto').checked, backup_auto: $('p_bauto').checked,
+    iniciar: SVC_PORTAS.filter(([id]) => $('sv_' + id).checked).map(([id]) => id),
+    escuta: Object.fromEntries(SVC_PORTAS.map(([id]) => [id, $('ip_' + id).value])),
+  };
+  SVC_PORTAS.forEach(([, , portas]) => portas.forEach((p) => { cfg[p] = +$('p_' + p).value; }));
+  // fora de 1 a 65535 nem chega ao Elefante como porta: avisa aqui, com o que fazer
+  if (SVC_PORTAS.some(([, , portas]) => portas.some((p) => !Number.isInteger(cfg[p]) || cfg[p] < 1 || cfg[p] > 65535))) return toast('As portas vão de 1 a 65535. Confira as de Serviços e portas e salve de novo.', 'err');
   try {
-    await invoke('save_config', { cfg: {
-      www: $('p_www').value.trim(), bin: $('p_bin').value.trim(), backups: $('p_backups').value.trim(), apache: $('p_apache').value, web: $('p_web').value, nginx: $('p_nginx').value, php: $('p_php').value, mysql: $('p_mysql').value,
-      http_port: +$('p_http').value, https_port: +$('p_https').value, mysql_port: +$('p_mysqlp').value,
-      domain: $('p_domain').value.trim(), ssl: $('p_ssl').checked, auto_start: $('p_auto').checked, env_auto: $('p_envauto').checked, backup_auto: $('p_bauto').checked } });
+    await invoke('save_config', { cfg });
     toast('Salvo. Pare e inicie os serviços pra valer.', 'ok');
   } catch (e) { fail(e); }
 });
@@ -819,7 +857,7 @@ $('saveprefs').addEventListener('click', async () => {
 /* ---------- PHP ---------- */
 async function loadPhpPainel() {
   if (!cur) return;
-  const v = await invoke('versoes'), sel = $('php_ver'), soNginx = (p) => cur.web !== 'nginx' && !p.apache;
+  const v = await invoke('versoes'), sel = $('php_ver'), soNginx = (p) => cur.usa_apache && !p.apache;
   const lista = v.php.some((p) => p.nome === cur.php) ? v.php : [{ nome: cur.php, apache: true }, ...v.php];
   sel.innerHTML = lista.map((p) => `<option value="${esc(p.nome)}" ${soNginx(p) ? 'disabled' : ''}>${esc(p.nome)}${soNginx(p) ? ' (só Nginx)' : ''}</option>`).join('');
   sel.value = cur.php;
@@ -963,6 +1001,18 @@ ev.listen('tauri://drag-drop', (e) => {
 
 window.__TAURI__.app.getVersion().then((v) => { $('ver').textContent = 'v' + v; $('ver2').textContent = 'v' + v; }).catch(() => {});
 invoke('vcredist_ok').then((ok) => { $('vc').hidden = ok; }).catch(() => {});
+// correção nova do PHP em uso (8.4.27 -> 8.4.28): avisa ao abrir; o clique baixa, leva o php.ini e troca
+async function atualizarPatchPhp() {
+  const a = $('php_patch_bt'); if (a.dataset.busy) return;
+  a.dataset.busy = '1'; a.textContent = 'Atualizando…';
+  try { toast(await invoke('php_atualizar_patch'), 'ok'); $('php_patch').hidden = true; loadPhpPainel().catch(fail); }
+  catch (e) { fail(e); a.textContent = 'Tentar de novo'; delete a.dataset.busy; }
+}
+invoke('php_patch').then((p) => {
+  if (!p) return;
+  $('php_patch_tx').innerHTML = `Saiu o <b>PHP ${esc(p.versao)}</b>, com correções para a versão que você usa. <a id="php_patch_bt">Atualizar agora</a>. O php.ini e as extensões vão junto.`;
+  $('php_patch_bt').onclick = atualizarPatchPhp; $('php_patch').hidden = false;
+}).catch(() => {}); // sem internet ao abrir: fica sem o aviso
 refresh().catch(fail);
 loadProcs().catch(() => {});
 setInterval(() => {
