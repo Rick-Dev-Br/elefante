@@ -20,3 +20,6 @@ src-tauri/gen/schemas/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Claude Code (config local do app, com caminhos desta máquina)
+.claude/
