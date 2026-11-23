@@ -1211,6 +1211,7 @@ mod tests {
         assert!(ng.contains("listen 127.0.0.1:8080 default_server;"), "Nginx sem escolha: só esta máquina, na porta dele\n{ng}");
         assert!(ng.contains("autoindex on;"), "só nesta máquina, lista os arquivos\n{ng}");
         assert!(ap.contains("<LocationMatch \"/\\.(?!well-known)\">\n  Require all denied"), ".env e .git nunca saem\n{ap}");
+        assert!(ap.contains("<FilesMatch \"^\\.\">") && ap.contains("<LocationMatch \"~[0-9]\">"), "nem pelo nome curto do Windows\n{ap}");
         let vh = fs::read_to_string(home.join("apache/sites/00-default.conf")).unwrap();
         assert!(vh.contains("Options FollowSymLinks") && !vh.contains("Indexes"), "na rede, sem lista de arquivos\n{vh}");
         c.escuta.insert("nginx".into(), "0.0.0.0".into());

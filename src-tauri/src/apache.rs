@@ -128,6 +128,13 @@ PidFile "{dir}/httpd.pid"
 <LocationMatch "/\.(?!well-known)">
   Require all denied
 </LocationMatch>
+# o mesmo pelo nome real do arquivo: no Windows, /ENV~1 é o nome curto (8.3) do .env e passaria pela regra acima
+<FilesMatch "^\.">
+  Require all denied
+</FilesMatch>
+<LocationMatch "~[0-9]">
+  Require all denied
+</LocationMatch>
 Include "{dir}/sites/*.conf"
 "#,
         root = fwd(&root),
