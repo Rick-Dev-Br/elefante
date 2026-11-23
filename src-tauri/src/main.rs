@@ -80,6 +80,12 @@ impl Cfg {
         self.escuta.get(svc).map_or("127.0.0.1", String::as_str)
     }
 
+    // Endereço de cada porta. A tela do Mailpit fica sempre só nesta máquina: ela não tem senha e mostra todos os
+    // e-mails; para a rede vai só o SMTP, que é o que outro aparelho precisa para enviar.
+    fn ip_porta(&self, svc: &str, porta: u16) -> &str {
+        if svc == "mailpit" && porta == self.mailpit_web_port { "127.0.0.1" } else { self.ip(svc) }
+    }
+
     // Marcado para subir no "Iniciar tudo".
     fn sobe(&self, svc: &str) -> bool {
         self.iniciar.iter().flatten().any(|s| s == svc)
@@ -485,7 +491,7 @@ fn iniciar(st: &App, svc: &str) -> Result<(), String> {
             let mut cmd = Command::new(exe);
             cmd.args([
                 "--listen".into(),
-                format!("{}:{}", c.ip("mailpit"), c.mailpit_web_port),
+                format!("{}:{}", c.ip_porta("mailpit", c.mailpit_web_port), c.mailpit_web_port),
                 "--smtp".into(),
                 format!("{}:{}", c.ip("mailpit"), c.mailpit_smtp_port),
                 "--database".into(),
@@ -589,7 +595,7 @@ fn status(st: State<App>) -> Status {
         mailpit_ok: mailpit_exe(&c).is_some(),
         redis_ok: redis_exe(&c).is_some(),
         iniciar: marcados(&c),
-        enderecos: SERVICES.iter().map(|&s| (s, portas(&c, s).iter().map(|p| format!("{}:{p}", c.ip(s))).collect())).collect(),
+        enderecos: SERVICES.iter().map(|&s| (s, portas(&c, s).iter().map(|&p| format!("{}:{p}", c.ip_porta(s, p))).collect())).collect(),
         ip_rede: ip_rede(),
         http_port: portas_dos_links(&c).0,
         mailpit_web_port: c.mailpit_web_port,
@@ -1203,6 +1209,17 @@ mod tests {
         nginx::write_nginx(&home, &c).unwrap();
         let ng = fs::read_to_string(home.join("nginx/sites/00-default.conf")).unwrap();
         assert!(ng.contains("listen 127.0.0.1:8080 default_server;"), "Nginx sem escolha: só esta máquina, na porta dele\n{ng}");
+        assert!(ng.contains("autoindex on;"), "só nesta máquina, lista os arquivos\n{ng}");
+        assert!(ap.contains("<LocationMatch \"/\\.(?!well-known)\">\n  Require all denied"), ".env e .git nunca saem\n{ap}");
+        let vh = fs::read_to_string(home.join("apache/sites/00-default.conf")).unwrap();
+        assert!(vh.contains("Options FollowSymLinks") && !vh.contains("Indexes"), "na rede, sem lista de arquivos\n{vh}");
+        c.escuta.insert("nginx".into(), "0.0.0.0".into());
+        nginx::write_nginx(&home, &c).unwrap();
+        assert!(fs::read_to_string(home.join("nginx/sites/00-default.conf")).unwrap().contains("autoindex off;"));
+
+        c.escuta.insert("mailpit".into(), "0.0.0.0".into());
+        assert_eq!(c.ip_porta("mailpit", c.mailpit_smtp_port), "0.0.0.0", "o SMTP vai para a rede");
+        assert_eq!(c.ip_porta("mailpit", c.mailpit_web_port), "127.0.0.1", "a tela, sem senha, fica só aqui");
         let _ = fs::remove_dir_all(&h);
     }
 }

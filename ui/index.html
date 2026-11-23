@@ -418,7 +418,7 @@
       <h2>Serviços e portas</h2>
       <div class="svc-grid" id="svcs"></div>
       <p class="sub" style="margin:10px 0 0">Marcados sobem com “Iniciar tudo”. Apache e Nginx podem rodar juntos, cada um nas suas portas; os links dos sites usam as do Apache, ou as do Nginx quando só ele está marcado.<br>
-        127.0.0.1 abre só neste computador. 0.0.0.0 abre também para outros aparelhos da sua rede: na primeira vez o Windows pergunta se libera no Firewall, e do celular o site abre pelo IP mostrado no Painel (os endereços .lvh.me só funcionam aqui). MariaDB e Redis vêm sem senha: deixe os dois em 127.0.0.1, a não ser numa rede de confiança.</p>
+        127.0.0.1 abre só neste computador. 0.0.0.0 abre também para outros aparelhos da sua rede: na primeira vez o Windows pergunta se libera no Firewall, e do celular o site abre pelo IP mostrado no Painel (os endereços .lvh.me só funcionam aqui). MariaDB e Redis vêm sem senha: deixe os dois em 127.0.0.1, a não ser numa rede de confiança. Na rede, os sites não listam arquivos nem servem .env e .git, e a tela do Mailpit continua só neste PC (vai para a rede só o envio de e-mail).</p>
       <h2>Comportamento</h2>
       <div class="form-grid">
         <span>HTTPS</span><label class="check"><input type="checkbox" id="p_ssl"> Sites também em https://</label>
@@ -523,8 +523,8 @@ const SERVICOS = ['mysql', 'redis', 'apache', 'nginx', 'mailpit']; // ordem de s
 const tudoNoAr = (s) => s.iniciar.length > 0 && s.iniciar.every((x) => s[x]);
 // "ip:porta" de cada porta. Quem escuta em 0.0.0.0 aparece com o IP deste PC na rede: é o que se abre de outro aparelho.
 function enderecos(s, svc) {
-  const l = s.enderecos[svc] || [], rede = l.length > 0 && l[0].startsWith('0.0.0.0:');
-  return l.map((e) => (rede && s.ip_rede ? s.ip_rede + e.slice(7) : e)).join(' · ') + (rede ? ' · aberto na rede local' : '');
+  const l = s.enderecos[svc] || [], rede = l.some((e) => e.startsWith('0.0.0.0:'));
+  return l.map((e) => (e.startsWith('0.0.0.0:') && s.ip_rede ? s.ip_rede + e.slice(7) : e)).join(' · ') + (rede ? ' · aberto na rede local' : '');
 }
 async function refresh() {
   if (busy) return;

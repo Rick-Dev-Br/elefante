@@ -30,6 +30,7 @@ pub fn write_nginx(home: &Path, c: &Cfg) -> Result<PathBuf, String> {
     let ng = fwd(&root);
     let server = |name: &str, doc: &str, default: &str| {
         let ip = c.ip("nginx");
+        let autoindex = if ip == "127.0.0.1" { "on" } else { "off" }; // na rede, sem lista de arquivos (igual ao Apache)
         let mut listen = format!("  listen {ip}:{}{default};\n", c.nginx_http_port);
         if let Some((crt, key)) = &cert {
             listen += &format!(
@@ -43,7 +44,7 @@ pub fn write_nginx(home: &Path, c: &Cfg) -> Result<PathBuf, String> {
 {listen}  server_name {name};
   root "{doc}";
   index index.php index.html;
-  autoindex on;
+  autoindex {autoindex};
   location ~ /\.(?!well-known) {{ deny all; }}
   location / {{ try_files $uri $uri/ /index.php?$query_string; }}
   location ~ \.php$ {{

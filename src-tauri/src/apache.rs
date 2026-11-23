@@ -124,6 +124,10 @@ AcceptFilter https none
 EnableSendfile Off
 EnableMMAP Off
 PidFile "{dir}/httpd.pid"
+# endereço com parte começando por ponto (.env, .git/config) nunca é servido; o .well-known (ACME, apps) fica
+<LocationMatch "/\.(?!well-known)">
+  Require all denied
+</LocationMatch>
 Include "{dir}/sites/*.conf"
 "#,
         root = fwd(&root),
@@ -133,9 +137,11 @@ Include "{dir}/sites/*.conf"
         logs = fwd(&home.join("logs")),
         dir = fwd(&dir),
     );
+    // Lista de arquivos só quando ninguém de fora alcança: na rede, quem abre a raiz veria todos os projetos.
+    let indexes = if c.ip("apache") == "127.0.0.1" { "Indexes " } else { "" };
     let block = |port: u16, name: &str, doc: &str, ssl: &str| {
         format!(
-            "<VirtualHost *:{port}>\n  ServerName {name}\n  DocumentRoot \"{doc}\"\n{ssl}  <Directory \"{doc}\">\n    Options Indexes FollowSymLinks\n    AllowOverride All\n    Require all granted\n  </Directory>\n</VirtualHost>\n"
+            "<VirtualHost *:{port}>\n  ServerName {name}\n  DocumentRoot \"{doc}\"\n{ssl}  <Directory \"{doc}\">\n    Options {indexes}FollowSymLinks\n    AllowOverride All\n    Require all granted\n  </Directory>\n</VirtualHost>\n"
         )
     };
     // http + (se SSL ligado) https do mesmo site
