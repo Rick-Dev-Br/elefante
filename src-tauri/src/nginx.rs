@@ -1,4 +1,4 @@
-// Nginx: alternativa ao Apache (Preferências → Servidor web). Mesmos sites, portas e certificado.
+// Nginx: roda junto com o Apache ou no lugar dele, nas portas próprias (padrão 8080/8443). Mesmos sites e certificado.
 // O PHP roda no php-cgi via FastCGI (no Windows não existe php-fpm).
 use super::*;
 
@@ -29,11 +29,12 @@ pub fn write_nginx(home: &Path, c: &Cfg) -> Result<PathBuf, String> {
 
     let ng = fwd(&root);
     let server = |name: &str, doc: &str, default: &str| {
-        let mut listen = format!("  listen 127.0.0.1:{}{default};\n", c.http_port);
+        let ip = c.ip("nginx");
+        let mut listen = format!("  listen {ip}:{}{default};\n", c.nginx_http_port);
         if let Some((crt, key)) = &cert {
             listen += &format!(
-                "  listen 127.0.0.1:{} ssl{default};\n  ssl_certificate \"{crt}\";\n  ssl_certificate_key \"{key}\";\n",
-                c.https_port
+                "  listen {ip}:{} ssl{default};\n  ssl_certificate \"{crt}\";\n  ssl_certificate_key \"{key}\";\n",
+                c.nginx_https_port
             );
         }
         // sem .htaccess no Nginx: o que não for arquivo cai no index.php (Laravel, WordPress, Symfony)
@@ -96,6 +97,7 @@ pub fn start(st: &App, c: &Cfg, logs: &Path) -> Result<Child, String> {
     let mut cgi = Command::new(php.join("php-cgi.exe"));
     cgi.arg("-b").arg(format!("127.0.0.1:{PHP_CGI}")).arg("-c").arg(php.join("php.ini"));
     cgi.env("PHP_FCGI_MAX_REQUESTS", "0"); // sem isso ele encerra sozinho a cada 500 requisições
+    cgi.env(SMTP_DO_SENDMAIL, smtp_mailpit(c));
     let ch = spawn(cgi, &logs.join("php-cgi.out"), &[PHP_CGI])?;
     st.procs.lock().unwrap().insert("php-cgi".into(), ch);
 
@@ -103,5 +105,5 @@ pub fn start(st: &App, c: &Cfg, logs: &Path) -> Result<Child, String> {
     let mut cmd = Command::new(root.join("nginx.exe"));
     cmd.arg("-p").arg(format!("{}/", fwd(&st.home.join("nginx"))));
     cmd.arg("-c").arg(fwd(&conf)).arg("-e").arg(fwd(&logs.join("nginx-error.log")));
-    spawn(cmd, &logs.join("nginx.out"), &portas_web(c)).inspect_err(|_| do_stop(st, "php-cgi"))
+    spawn(cmd, &logs.join("nginx.out"), &portas(c, "nginx")).inspect_err(|_| do_stop(st, "php-cgi"))
 }

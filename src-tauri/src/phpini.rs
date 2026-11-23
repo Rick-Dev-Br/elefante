@@ -14,8 +14,8 @@ pub fn trocar_php(st: &App, c: &Cfg, v: &str) -> Result<(), String> {
     if !menu::versions(&Path::new(&c.bin).join("php")).iter().any(|n| n == v) {
         return Err(format!("O PHP {v} saiu da pasta bin. Atualize a tela e escolha outro."));
     }
-    if c.web != "nginx" && !menu::php_com_apache(c, v) {
-        return Err(format!("{v} roda só com o Nginx, porque falta o módulo do Apache (php8apache2_4.dll). Escolha uma versão sem \"nts\" no nome ou troque o servidor web em Ajustes."));
+    if usa_apache(st, c) && !menu::php_com_apache(c, v) {
+        return Err(format!("{v} roda só com o Nginx, porque falta o módulo do Apache (php8apache2_4.dll). Escolha uma versão sem \"nts\" no nome, ou pare o Apache e desmarque ele em Ajustes → Serviços e portas."));
     }
     let mut novo = c.clone();
     novo.php = v.to_string();

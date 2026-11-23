@@ -62,7 +62,8 @@ fn banco_e_env(st: &App, c: &Cfg, name: &str, dir: &Path, laravel: bool) -> Resu
         }
     }
     if laravel {
-        let porta = if c.http_port == 80 { String::new() } else { format!(":{}", c.http_port) };
+        let http = portas_dos_links(c).0;
+        let porta = if http == 80 { String::new() } else { format!(":{http}") };
         let vars = [
             ("APP_URL", format!("http://{name}.{}{porta}", c.domain)),
             ("DB_CONNECTION", "mysql".to_string()),
@@ -73,7 +74,7 @@ fn banco_e_env(st: &App, c: &Cfg, name: &str, dir: &Path, laravel: bool) -> Resu
             ("DB_PASSWORD", String::new()),
             ("MAIL_MAILER", "smtp".to_string()),
             ("MAIL_HOST", "127.0.0.1".to_string()),
-            ("MAIL_PORT", MAILPIT_SMTP.to_string()),
+            ("MAIL_PORT", c.mailpit_smtp_port.to_string()),
         ];
         let envf = dir.join(".env");
         let mut txt = fs::read_to_string(&envf).map_err(|e| e.to_string())?;

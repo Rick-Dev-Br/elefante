@@ -2,10 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fs,
     io::{Read, Seek, SeekFrom},
-    net::{SocketAddr, TcpListener, TcpStream},
+    net::{SocketAddr, TcpListener, TcpStream, UdpSocket},
     os::windows::process::CommandExt,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -33,10 +33,13 @@ mod project;
 mod xdebug;
 
 const NO_WINDOW: u32 = 0x0800_0000;
-const SERVICES: [&str; 3] = ["apache", "mysql", "mailpit"];
-const MAILPIT_UI: u16 = 8025; // ponytail: portas fixas do Mailpit (interface web e SMTP)
-const MAILPIT_SMTP: u16 = 1025;
-const PHP_CGI: u16 = 9123; // php-cgi do Nginx (FastCGI), só em 127.0.0.1
+// Também a ordem do "Iniciar tudo": o banco e o cache sobem antes de quem usa eles.
+const SERVICES: [&str; 5] = ["mysql", "redis", "apache", "nginx", "mailpit"];
+const PHP_CGI: u16 = 9123; // php-cgi do Nginx (FastCGI), sempre só em 127.0.0.1
+// Onde um serviço escuta: só esta máquina, ou todas as placas de rede (abre para outros aparelhos da rede).
+// IP de uma placa (ex.: 192.168.0.10) fica de fora: o Elefante e os .env dos projetos conectam em 127.0.0.1.
+const ENDERECOS: [&str; 2] = ["127.0.0.1", "0.0.0.0"];
+const SMTP_DO_SENDMAIL: &str = "MP_SENDMAIL_SMTP_ADDR"; // o `mailpit sendmail` do php.ini lê a porta SMTP daqui
 const ESPERA_PORTA: Duration = Duration::from_secs(15); // servidor web, Mailpit e php-cgi abrem bem antes disso
 const ESPERA_MARIADB: Duration = Duration::from_secs(60); // pode estar recuperando dados depois de uma queda
 
@@ -49,17 +52,43 @@ struct Cfg {
     apache: String,
     php: String,
     mysql: String,
-    http_port: u16,
-    https_port: u16,
+    http_port: u16,  // Apache
+    https_port: u16, // Apache
     mysql_port: u16,
+    nginx_http_port: u16,
+    nginx_https_port: u16,
+    redis_port: u16,
+    mailpit_smtp_port: u16,
+    mailpit_web_port: u16,
     domain: String,
     ssl: bool,
     auto_start: bool, // iniciar os serviços quando o Elefante abre
-    web: String,      // servidor web: "apache" ou "nginx" (o serviço continua com id "apache")
+    web: String,      // só para config antiga: quando Apache e Nginx eram um ou outro, escolhia qual (ver load_cfg)
     nginx: String,
     env_auto: bool, // trocar a versão também atualiza o PATH do Windows (envpath.rs)
     backups: String,   // pasta dos backups de banco: fora da pasta de dados, que o desinstalador pode apagar
     backup_auto: bool, // um backup a cada 24 h com o MariaDB ligado (dbtools.rs)
+    // Quem sobe no "Iniciar tudo". None = config de antes desta escolha: o load_cfg monta a partir de `web`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    iniciar: Option<Vec<String>>,
+    escuta: BTreeMap<String, String>, // endereço de cada serviço (um de ENDERECOS); quem falta escuta só em 127.0.0.1
+}
+
+impl Cfg {
+    // Endereço em que o serviço escuta. Sem escolha salva, o seguro: só esta máquina.
+    fn ip(&self, svc: &str) -> &str {
+        self.escuta.get(svc).map_or("127.0.0.1", String::as_str)
+    }
+
+    // Marcado para subir no "Iniciar tudo".
+    fn sobe(&self, svc: &str) -> bool {
+        self.iniciar.iter().flatten().any(|s| s == svc)
+    }
+
+    // Todas as portas configuradas: nenhuma pode repetir, porque dois serviços não escutam na mesma.
+    fn portas_todas(&self) -> [u16; 8] {
+        [self.http_port, self.https_port, self.nginx_http_port, self.nginx_https_port, self.mysql_port, self.redis_port, self.mailpit_smtp_port, self.mailpit_web_port]
+    }
 }
 
 impl Default for Cfg {
@@ -69,11 +98,16 @@ impl Default for Cfg {
             bin: "C:/elefante/bin".into(),
             www: "C:/elefante/www".into(),
             apache: "httpd-2.4.66-VS17".into(),
-            php: "php-8.4.13-Win32-vs17-x64".into(), // TS: precisa do php8apache2_4.dll
+            php: "php-8.4.28-Win32-vs17-x64".into(), // TS: precisa do php8apache2_4.dll
             mysql: "mariadb-10.6.28-winx64".into(),
             http_port: 80,
             https_port: 443,
             mysql_port: 3306,
+            nginx_http_port: 8080, // fora da 80/443: o Apache e o Nginx podem rodar juntos
+            nginx_https_port: 8443,
+            redis_port: 6379,
+            mailpit_smtp_port: 1025,
+            mailpit_web_port: 8025,
             domain: "lvh.me".into(), // *.lvh.me já resolve p/ 127.0.0.1, sem mexer no hosts
             ssl: true,
             auto_start: false,
@@ -82,6 +116,8 @@ impl Default for Cfg {
             env_auto: false,
             backups: "C:/elefante/backups".into(),
             backup_auto: true,
+            iniciar: None,
+            escuta: BTreeMap::new(),
         }
     }
 }
@@ -117,13 +153,19 @@ struct Site {
 #[derive(Serialize)]
 struct Status {
     apache: bool,
+    nginx: bool,
     mysql: bool,
+    redis: bool,
     mailpit: bool,
     mailpit_ok: bool,
-    http_port: u16,
-    mysql_port: u16,
+    redis_ok: bool,
+    iniciar: Vec<&'static str>,                     // o que o "Iniciar tudo" sobe (marcados e instalados)
+    enderecos: BTreeMap<&'static str, Vec<String>>, // "ip:porta" de cada serviço
+    ip_rede: Option<String>,                        // IP deste PC na rede local: o endereço para abrir de outro aparelho
+    http_port: u16,                                 // porta dos links dos sites (botão Web)
+    mailpit_web_port: u16,
+    usa_apache: bool, // o PHP ativo precisa do módulo do Apache
     ssl_ready: bool,
-    web: String,
     php: String,
     xdebug: bool,
     www: String,
@@ -132,7 +174,7 @@ struct Status {
 
 fn load_cfg(home: &Path) -> Cfg {
     let f = home.join("config.json");
-    match fs::read_to_string(&f) {
+    let mut c: Cfg = match fs::read_to_string(&f) {
         // BOM (Notepad/PowerShell) quebraria o parse; arquivo ilegível nunca é sobrescrito
         Ok(s) => serde_json::from_str(s.trim_start_matches('\u{feff}')).unwrap_or_default(),
         Err(_) => {
@@ -141,7 +183,17 @@ fn load_cfg(home: &Path) -> Cfg {
             let _ = fs::write(&f, serde_json::to_string_pretty(&c).unwrap());
             c
         }
+    };
+    // Config de antes da escolha por serviço: o "Iniciar" subia o servidor de `web`, o MariaDB e o Mailpit.
+    if c.iniciar.is_none() {
+        c.iniciar = Some(vec![c.web.clone(), "mysql".into(), "mailpit".into()]);
     }
+    c
+}
+
+// Portas dos links dos sites e do APP_URL: as do Apache, a não ser que só o Nginx esteja marcado para subir.
+fn portas_dos_links(c: &Cfg) -> (u16, u16) {
+    if !c.sobe("apache") && c.sobe("nginx") { (c.nginx_http_port, c.nginx_https_port) } else { (c.http_port, c.https_port) }
 }
 
 fn fwd(p: &Path) -> String {
@@ -184,8 +236,9 @@ fn list_sites(c: &Cfg) -> Vec<Site> {
             }
             let dir = e.path();
             let root = raiz_do_site(&dir);
-            let port = if c.http_port == 80 { String::new() } else { format!(":{}", c.http_port) };
-            let sport = if c.https_port == 443 { String::new() } else { format!(":{}", c.https_port) };
+            let (http, https) = portas_dos_links(c);
+            let port = if http == 80 { String::new() } else { format!(":{http}") };
+            let sport = if https == 443 { String::new() } else { format!(":{https}") };
             Some(Site {
                 url: format!("http://{name}.{}{port}", c.domain),
                 url_ssl: format!("https://{name}.{}{sport}", c.domain),
@@ -290,8 +343,42 @@ fn in_use(p: u16) -> bool {
     TcpListener::bind(("0.0.0.0", p)).is_err() || porta_aberta(p)
 }
 
-fn portas_web(c: &Cfg) -> Vec<u16> {
-    if c.ssl { vec![c.http_port, c.https_port] } else { vec![c.http_port] }
+// Portas em que o serviço escuta: o que o iniciar espera abrir e o que o Painel mostra.
+fn portas(c: &Cfg, svc: &str) -> Vec<u16> {
+    let web = |http, https| if c.ssl { vec![http, https] } else { vec![http] };
+    match svc {
+        "apache" => web(c.http_port, c.https_port),
+        "nginx" => web(c.nginx_http_port, c.nginx_https_port),
+        "redis" => vec![c.redis_port],
+        "mailpit" => vec![c.mailpit_smtp_port, c.mailpit_web_port],
+        _ => vec![c.mysql_port],
+    }
+}
+
+// O que o "Iniciar tudo" sobe: os marcados, na ordem de SERVICES. Mailpit e Redis são opcionais: marcados sem
+// estar instalados ficam de fora em silêncio (a config antiga marca o Mailpit mesmo para quem não tem).
+fn marcados(c: &Cfg) -> Vec<&'static str> {
+    SERVICES
+        .into_iter()
+        .filter(|s| c.sobe(s) && match *s { "mailpit" => mailpit_exe(c).is_some(), "redis" => redis_exe(c).is_some(), _ => true })
+        .collect()
+}
+
+// O Apache roda o PHP pelo módulo dele (php8apache2_4.dll): marcado ou ligado, o PHP ativo precisa ter esse módulo.
+fn usa_apache(st: &App, c: &Cfg) -> bool {
+    c.sobe("apache") || running(st, "apache")
+}
+
+// IP deste PC na rede local. O connect do UDP não manda nada: só faz o Windows escolher a placa que sai para a rede.
+fn ip_rede() -> Option<String> {
+    let s = UdpSocket::bind("0.0.0.0:0").ok()?;
+    s.connect("8.8.8.8:80").ok()?;
+    Some(s.local_addr().ok()?.ip().to_string())
+}
+
+// Endereço SMTP do Mailpit para o `mailpit sendmail` (o mail() do PHP), que sem isso usaria sempre a 1025.
+fn smtp_mailpit(c: &Cfg) -> String {
+    format!("127.0.0.1:{}", c.mailpit_smtp_port)
 }
 
 // Trava de instância única: o 2º Elefante só pede ao 1º que mostre a janela e sai.
@@ -329,12 +416,8 @@ fn do_start(st: &App, svc: &str) -> Result<(), String> {
 
 fn iniciar(st: &App, svc: &str) -> Result<(), String> {
     let c = load_cfg(&st.home);
-    let mut ports = match svc {
-        "apache" => portas_web(&c),
-        "mailpit" => vec![MAILPIT_UI, MAILPIT_SMTP],
-        _ => vec![c.mysql_port],
-    };
-    if svc == "apache" && c.web == "nginx" {
+    let mut ports = portas(&c, svc);
+    if svc == "nginx" {
         do_stop(st, "php-cgi"); // sobrou de um Nginx que caiu: seguraria a porta
         ports.push(PHP_CGI);
     }
@@ -345,7 +428,7 @@ fn iniciar(st: &App, svc: &str) -> Result<(), String> {
     let logs = st.home.join("logs");
     fs::create_dir_all(&logs).map_err(|e| e.to_string())?;
     let child = match svc {
-        "apache" if c.web == "nginx" => {
+        "nginx" => {
             let ch = nginx::start(st, &c, &logs)?;
             *st.sites_sig.lock().unwrap() = sites_signature(&c);
             ch
@@ -355,8 +438,16 @@ fn iniciar(st: &App, svc: &str) -> Result<(), String> {
             *st.sites_sig.lock().unwrap() = sites_signature(&c);
             let root = Path::new(&c.bin).join("apache").join(&c.apache);
             let mut cmd = Command::new(root.join("bin/httpd.exe"));
-            cmd.arg("-f").arg(conf);
+            cmd.arg("-f").arg(conf).env(SMTP_DO_SENDMAIL, smtp_mailpit(&c));
             spawn(cmd, &logs.join("apache.out"), &ports)?
+        }
+        "redis" => {
+            let exe = redis_exe(&c).ok_or_else(|| format!("O Redis ainda não está em {}/redis. Instale em Ajustes → Componentes.", c.bin))?;
+            let data = st.home.join("redis-data"); // onde ele grava o dump.rdb: na pasta de dados do app, não na bin
+            fs::create_dir_all(&data).map_err(|e| e.to_string())?;
+            let mut cmd = Command::new(exe);
+            cmd.args(["--port".into(), c.redis_port.to_string(), "--bind".into(), c.ip("redis").to_string(), "--dir".into(), fwd(&data)]);
+            spawn(cmd, &logs.join("redis.out"), &ports)?
         }
         "mysql" => {
             let base = Path::new(&c.bin).join("mysql").join(&c.mysql);
@@ -377,7 +468,7 @@ fn iniciar(st: &App, svc: &str) -> Result<(), String> {
                 format!("--basedir={}", fwd(&base)),
                 format!("--datadir={}", fwd(&data)),
                 format!("--port={}", c.mysql_port),
-                "--bind-address=127.0.0.1".into(),
+                format!("--bind-address={}", c.ip("mysql")),
                 "--skip-name-resolve".into(),
                 "--character-set-server=utf8mb4".into(),
                 "--max-allowed-packet=1G".into(), // o padrão de 16 MB barra dump com linha grande
@@ -394,9 +485,9 @@ fn iniciar(st: &App, svc: &str) -> Result<(), String> {
             let mut cmd = Command::new(exe);
             cmd.args([
                 "--listen".into(),
-                format!("127.0.0.1:{MAILPIT_UI}"),
+                format!("{}:{}", c.ip("mailpit"), c.mailpit_web_port),
                 "--smtp".into(),
-                format!("127.0.0.1:{MAILPIT_SMTP}"),
+                format!("{}:{}", c.ip("mailpit"), c.mailpit_smtp_port),
                 "--database".into(),
                 fwd(&st.home.join("mailpit.db")),
             ]);
@@ -409,8 +500,8 @@ fn iniciar(st: &App, svc: &str) -> Result<(), String> {
 }
 
 fn do_stop(st: &App, svc: &str) {
-    if svc == "apache" {
-        do_stop(st, "php-cgi"); // só existe com o Nginx
+    if svc == "nginx" {
+        do_stop(st, "php-cgi"); // o PHP do Nginx
     }
     let child = st.procs.lock().unwrap().remove(svc);
     let Some(mut ch) = child else { return };
@@ -467,12 +558,13 @@ fn running(st: &App, svc: &str) -> bool {
 }
 
 // Texto do aviso quando algo para sozinho, com o fim do log de quem parou.
-fn aviso_de_queda(st: &App, c: &Cfg, svc: &str) -> String {
+fn aviso_de_queda(st: &App, svc: &str) -> String {
     let logs = st.home.join("logs");
-    let web = if c.web == "nginx" { "Nginx" } else { "Apache" };
     let (texto, log) = match svc {
-        "apache" => (format!("O {web} parou sozinho. Ligue de novo no Painel."), logs.join(format!("{}-error.log", web.to_lowercase()))),
+        "apache" => ("O Apache parou sozinho. Ligue de novo no Painel.".to_string(), logs.join("apache-error.log")),
+        "nginx" => ("O Nginx parou sozinho. Ligue de novo no Painel.".to_string(), logs.join("nginx-error.log")),
         "mysql" => ("O MariaDB parou sozinho. Ligue de novo no Painel.".to_string(), logs.join("mysql.out")),
+        "redis" => ("O Redis parou sozinho. Ligue de novo no Painel.".to_string(), logs.join("redis.out")),
         "mailpit" => ("O Mailpit parou sozinho. Ligue de novo no Painel.".to_string(), logs.join("mailpit.out")),
         "php-cgi" => ("O PHP do Nginx parou sozinho. Reinicie o Nginx no Painel.".to_string(), logs.join("php-cgi.out")),
         x => {
@@ -490,14 +582,20 @@ fn status(st: State<App>) -> Status {
     let c = load_cfg(&st.home);
     Status {
         apache: running(&st, "apache"),
+        nginx: running(&st, "nginx"),
         mysql: running(&st, "mysql"),
+        redis: running(&st, "redis"),
         mailpit: running(&st, "mailpit"),
         mailpit_ok: mailpit_exe(&c).is_some(),
-        http_port: c.http_port,
-        mysql_port: c.mysql_port,
+        redis_ok: redis_exe(&c).is_some(),
+        iniciar: marcados(&c),
+        enderecos: SERVICES.iter().map(|&s| (s, portas(&c, s).iter().map(|p| format!("{}:{p}", c.ip(s))).collect())).collect(),
+        ip_rede: ip_rede(),
+        http_port: portas_dos_links(&c).0,
+        mailpit_web_port: c.mailpit_web_port,
+        usa_apache: usa_apache(&st, &c),
         ssl_ready: c.ssl && st.home.join("ssl/site.crt").exists(),
         sites: list_sites(&c),
-        web: c.web.clone(),
         php: c.php.clone(),
         xdebug: xdebug::ligado(&c),
         www: c.www,
@@ -514,11 +612,13 @@ fn stop(st: State<App>, svc: String) {
     do_stop(&st, &svc)
 }
 
-// Reescreve os vhosts a partir de www\ e reinicia o Apache se estiver rodando.
+// Reescreve os sites a partir de www\ e reinicia o Apache e o Nginx que estiverem rodando.
 fn do_reload(st: &App) -> Result<(), String> {
-    if running(st, "apache") {
-        do_stop(st, "apache");
-        do_start(st, "apache")?;
+    for web in ["apache", "nginx"] {
+        if running(st, web) {
+            do_stop(st, web);
+            do_start(st, web)?;
+        }
     }
     Ok(())
 }
@@ -561,14 +661,22 @@ fn trust(home: &Path) -> Result<(), String> {
     if out.status.success() { Ok(()) } else { Err("Instalação cancelada ou negada.".into()) }
 }
 
-// <bin>/mailpit/mailpit.exe ou <bin>/mailpit/<versão>/mailpit.exe
-fn mailpit_exe(c: &Cfg) -> Option<PathBuf> {
-    let d = Path::new(&c.bin).join("mailpit");
-    let direto = d.join("mailpit.exe");
+// <bin>/<pasta>/<exe> ou <bin>/<pasta>/<versão>/<exe> (como no Laragon, ou num zip que traz uma pasta dentro)
+fn exe_opcional(c: &Cfg, pasta: &str, exe: &str) -> Option<PathBuf> {
+    let d = Path::new(&c.bin).join(pasta);
+    let direto = d.join(exe);
     if direto.exists() {
         return Some(direto);
     }
-    fs::read_dir(&d).ok()?.flatten().map(|e| e.path().join("mailpit.exe")).find(|p| p.exists())
+    fs::read_dir(&d).ok()?.flatten().map(|e| e.path().join(exe)).find(|p| p.exists())
+}
+
+fn mailpit_exe(c: &Cfg) -> Option<PathBuf> {
+    exe_opcional(c, "mailpit", "mailpit.exe")
+}
+
+fn redis_exe(c: &Cfg) -> Option<PathBuf> {
+    exe_opcional(c, "redis", "redis-server.exe")
 }
 
 fn explorer(p: &str) -> Result<(), String> {
@@ -635,6 +743,7 @@ fn open_terminal(c: &Cfg, cwd: &str) -> Result<(), String> {
     Command::new("cmd")
         .args(["/c", "start", "", "cmd", "/k"]) // 1º arg do start = título; vazio, senão ele tenta executar o título
         .env("PATH", path)
+        .env(SMTP_DO_SENDMAIL, smtp_mailpit(c))
         .current_dir(cwd)
         .spawn()
         .map(|_| ())
@@ -689,9 +798,21 @@ fn get_config(st: State<App>) -> Cfg {
 // Preferências: só valida o básico; as mudanças valem na próxima vez que o serviço iniciar.
 #[tauri::command(async)]
 fn save_config(st: State<App>, cfg: Cfg) -> Result<(), String> {
-    let ports = [cfg.http_port, cfg.https_port, cfg.mysql_port];
-    if ports.contains(&0) || ports[0] == ports[1] || ports[0] == ports[2] || ports[1] == ports[2] {
-        return Err("As três portas precisam ser diferentes e maiores que 0.".into());
+    validar(&cfg)?;
+    save_cfg(&st.home, &cfg)
+}
+
+fn validar(cfg: &Cfg) -> Result<(), String> {
+    let ports = cfg.portas_todas();
+    if ports.contains(&0) || (1..ports.len()).any(|i| ports[..i].contains(&ports[i])) {
+        return Err("Cada serviço precisa de portas só dele, de 1 a 65535. Troque as repetidas em Serviços e portas.".into());
+    }
+    // Endereço vira argumento e linha de config (Listen, --bind): só os da lista, nunca texto livre.
+    if cfg.escuta.iter().any(|(s, ip)| !SERVICES.contains(&s.as_str()) || !ENDERECOS.contains(&ip.as_str())) {
+        return Err("Escolha 127.0.0.1 ou 0.0.0.0 no endereço de cada serviço.".into());
+    }
+    if cfg.iniciar.iter().flatten().any(|s| !SERVICES.contains(&s.as_str())) {
+        return Err("A lista do Iniciar veio com um serviço que o Elefante não tem. Atualize a tela e salve de novo.".into());
     }
     if cfg.web != "apache" && cfg.web != "nginx" {
         return Err("Servidor web inválido.".into());
@@ -702,7 +823,7 @@ fn save_config(st: State<App>, cfg: Cfg) -> Result<(), String> {
     if cfg.domain.is_empty() || !cfg.domain.chars().all(|ch| ch.is_ascii_alphanumeric() || ".-".contains(ch)) {
         return Err("Domínio inválido (use letras, números, ponto e hífen).".into());
     }
-    save_cfg(&st.home, &cfg)
+    Ok(())
 }
 
 fn show(app: &AppHandle) {
@@ -739,11 +860,9 @@ fn main() {
                 let a = app.handle().clone();
                 thread::spawn(move || {
                     let st = a.state::<App>();
-                    for s in SERVICES {
+                    for s in marcados(&load_cfg(&st.home)) {
                         if let Err(e) = do_start(&st, s) {
-                            if s != "mailpit" {
-                                menu::erro(&a, &e);
-                            }
+                            menu::erro(&a, &e);
                         }
                     }
                 });
@@ -773,7 +892,7 @@ fn main() {
                 let _ = w.hide();
             }
         })
-        .invoke_handler(tauri::generate_handler![status, start, stop, reload_sites, terminal, open_url, open_www, open_db, ssl_trusted, trust_ca, project::create_project, project::project_preparar, project::sites_info, components::components, components::install_component, components::php_disponiveis, components::php_instalar, phpini::php_trocar, phpini::versoes, phpini::php_config, phpini::php_aplicar, site_open, get_config, save_config,
+        .invoke_handler(tauri::generate_handler![status, start, stop, reload_sites, terminal, open_url, open_www, open_db, ssl_trusted, trust_ca, project::create_project, project::project_preparar, project::sites_info, components::components, components::install_component, components::php_disponiveis, components::php_instalar, components::php_patch, components::php_atualizar_patch, phpini::php_trocar, phpini::versoes, phpini::php_config, phpini::php_aplicar, site_open, get_config, save_config,
             procs::procs_list, procs::proc_save, procs::proc_delete, procs::proc_start, procs::proc_stop, procs::proc_log,
             dbtools::db_list, dbtools::db_backup, dbtools::db_backup_um, dbtools::db_backups, dbtools::db_abrir_backups, dbtools::db_criar, dbtools::db_copiar, dbtools::db_apagar, dbtools::db_consultas, dbtools::db_consultas_estado, dbtools::db_import_sql, dbtools::db_import_legacy,
             extras::porta_dono, extras::encerrar_dono_porta, extras::vcredist_ok, extras::get_autostart, extras::set_autostart, extras::log_tail, extras::log_lista, extras::log_limpar, extras::hosts_faltando, extras::hosts_completar, xdebug::xdebug_toggle,
@@ -1005,10 +1124,9 @@ mod tests {
     fn aviso_de_queda_traz_o_fim_do_log() {
         let a = App::new(tmp("aviso"));
         fs::create_dir_all(a.home.join("logs")).unwrap();
-        let c = Cfg::default();
-        assert_eq!(aviso_de_queda(&a, &c, "mailpit"), "O Mailpit parou sozinho. Ligue de novo no Painel.", "sem log, só a orientação");
+        assert_eq!(aviso_de_queda(&a, "mailpit"), "O Mailpit parou sozinho. Ligue de novo no Painel.", "sem log, só a orientação");
         fs::write(a.home.join("logs/mysql.out"), "InnoDB: disco cheio").unwrap();
-        let t = aviso_de_queda(&a, &c, "mysql");
+        let t = aviso_de_queda(&a, "mysql");
         assert!(t.starts_with("O MariaDB parou sozinho.") && t.ends_with("InnoDB: disco cheio"), "{t}");
         let _ = fs::remove_dir_all(&a.home);
     }
@@ -1038,5 +1156,53 @@ mod tests {
         assert!(browse("javascript:alert(1)").is_err());
         assert!(browse("http://a.lvh.me/ & calc").is_err());
         assert!(browse("ftp://x").is_err());
+    }
+
+    #[test]
+    fn config_antiga_com_nginx_marca_o_nginx_e_os_links_usam_a_porta_dele() {
+        let h = tmp("cfg-nginx");
+        fs::write(h.join("config.json"), "{\"web\":\"nginx\"}").unwrap();
+        let c = load_cfg(&h);
+        assert_eq!(c.iniciar, Some(["nginx", "mysql", "mailpit"].map(String::from).to_vec()), "o Iniciar sobe o mesmo de antes");
+        assert_eq!(portas_dos_links(&c), (8080, 8443), "só o Nginx sobe: os links vão para as portas dele");
+        assert_eq!(c.ip("nginx"), "127.0.0.1", "sem escolha salva, escuta só nesta máquina");
+        assert_eq!(fs::read_to_string(h.join("config.json")).unwrap(), "{\"web\":\"nginx\"}", "migrar não reescreve o arquivo");
+        let padrao = load_cfg(&tmp("cfg-novo"));
+        assert_eq!(portas_dos_links(&padrao), (80, 443), "instalação nova: Apache marcado, links na 80");
+        let _ = fs::remove_dir_all(&h);
+    }
+
+    #[test]
+    fn salvar_recusa_porta_repetida_e_endereco_fora_da_lista() {
+        assert_eq!(validar(&Cfg::default()), Ok(()));
+        assert!(validar(&Cfg { nginx_http_port: 80, ..Cfg::default() }).unwrap_err().contains("portas só dele"));
+        let mut c = Cfg::default();
+        c.escuta.insert("apache".into(), "0.0.0.0".into());
+        assert_eq!(validar(&c), Ok(()));
+        c.escuta.insert("apache".into(), "0.0.0.0:80\nListen 0.0.0.0".into());
+        assert!(validar(&c).is_err(), "o endereço vira linha do httpd.conf: só os da lista");
+        assert!(validar(&Cfg { iniciar: Some(vec!["apache".into(), "ftp".into()]), ..Cfg::default() }).is_err());
+    }
+
+    #[test]
+    fn apache_e_nginx_escutam_no_endereco_e_nas_portas_de_cada_um() {
+        let h = tmp("listen");
+        let arquivo = |p: String| {
+            let f = h.join(p);
+            fs::create_dir_all(f.parent().unwrap()).unwrap();
+            fs::write(f, "").unwrap();
+        };
+        let mut c = Cfg { bin: fwd(&h.join("bin")), www: fwd(&h.join("www")), ssl: false, ..Cfg::default() };
+        c.escuta.insert("apache".into(), "0.0.0.0".into());
+        arquivo(format!("bin/apache/{}/bin/httpd.exe", c.apache));
+        arquivo(format!("bin/php/{}/php8apache2_4.dll", c.php));
+        arquivo(format!("bin/nginx/{}/nginx.exe", c.nginx));
+        let home = h.join("home");
+        let ap = fs::read_to_string(apache::write_apache(&home, &c).unwrap()).unwrap();
+        assert!(ap.contains("Listen 0.0.0.0:80\n"), "{ap}");
+        nginx::write_nginx(&home, &c).unwrap();
+        let ng = fs::read_to_string(home.join("nginx/sites/00-default.conf")).unwrap();
+        assert!(ng.contains("listen 127.0.0.1:8080 default_server;"), "Nginx sem escolha: só esta máquina, na porta dele\n{ng}");
+        let _ = fs::remove_dir_all(&h);
     }
 }

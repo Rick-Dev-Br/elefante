@@ -42,11 +42,10 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let st = app.state::<App>();
     let c = load_cfg(&st.home);
     let b = Path::new(&c.bin);
-    let (ap, my, mp) = (running(&st, "apache"), running(&st, "mysql"), running(&st, "mailpit"));
-    let mp_ok = mailpit_exe(&c).is_some();
+    let (ap, ng, my, rd, mp) = (running(&st, "apache"), running(&st, "nginx"), running(&st, "mysql"), running(&st, "redis"), running(&st, "mailpit"));
+    let (mp_ok, rd_ok) = (mailpit_exe(&c).is_some(), redis_exe(&c).is_some());
     let marca = |on: bool, n: &str| if on { format!("✔ {n}") } else { format!("    {n}") };
     let liga = |on: bool| if on { "Parar" } else { "Iniciar" };
-    let ngx = c.web == "nginx";
 
     // Elefante
     let elefante = sub(app, "Elefante", vec![
@@ -57,7 +56,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         it(app, "folder:home", "Pasta de configuração", true)?,
         it(app, "folder:bin", "Pasta bin", true)?,
         sep(app)?,
-        it(app, "about", "Sobre o Elefante (criado por Rick-dev)", true)?,
+        it(app, "about", "Sobre o Elefante (criado por Rick-Dev-Br)", true)?,
     ])?;
 
     // www: um item por site + a pasta
@@ -105,16 +104,26 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     pr.push(it(app, "procs-ui", "Gerenciar processos…", true)?);
     let processos = sub(app, "Processos", pr)?;
 
-    let apache = sub(app, &marca(ap, if ngx { "Nginx" } else { "Apache" }), vec![
-        it(app, "svc:apache", liga(ap), true)?,
-        it(app, "reload", "Recarregar sites (reinicia)", ap)?,
-        it(app, "web:trocar", if ngx { "Trocar para Apache" } else { "Trocar para Nginx" }, true)?,
+    // Apache e Nginx: mesmo submenu, cada um com o arquivo gerado, os logs e a pasta dele
+    let web = |id: &str, nome: &str, on: bool, conf: &str| -> tauri::Result<Item> {
+        sub(app, &marca(on, nome), vec![
+            it(app, &format!("svc:{id}"), liga(on), true)?,
+            it(app, "reload", "Recarregar sites (reinicia)", on)?,
+            sep(app)?,
+            it(app, &format!("open:{id}-conf"), &format!("Abrir {conf} (gerado)"), true)?,
+            it(app, &format!("open:log-{id}-error"), "Log de erros", true)?,
+            it(app, &format!("open:log-{id}-access"), "Log de acessos", true)?,
+            sep(app)?,
+            it(app, &format!("folder:{id}"), &format!("Pasta do {nome}"), true)?,
+        ])
+    };
+    let apache = web("apache", "Apache", ap, "httpd.conf")?;
+    let nginx = web("nginx", "Nginx", ng, "nginx.conf")?;
+
+    let redis = sub(app, &marca(rd, "Redis"), vec![
+        it(app, "svc:redis", if rd_ok { liga(rd) } else { "Redis não encontrado em bin" }, rd_ok)?,
         sep(app)?,
-        it(app, "open:apache-conf", if ngx { "Abrir nginx.conf (gerado)" } else { "Abrir httpd.conf (gerado)" }, true)?,
-        it(app, "open:log-apache-error", "Log de erros", true)?,
-        it(app, "open:log-apache-access", "Log de acessos", true)?,
-        sep(app)?,
-        it(app, "folder:apache", if ngx { "Pasta do Nginx" } else { "Pasta do Apache" }, true)?,
+        it(app, "open:log-redis", "Log", true)?,
     ])?;
 
     let mariadb = sub(app, &marca(my, "MariaDB"), vec![
@@ -149,8 +158,9 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let python = sub(app, "Python", lista("python")?)?;
 
     let mut phps: Vec<Item> = Vec::new();
+    let com_apache = usa_apache(&st, &c);
     for v in versions(&b.join("php")) {
-        let ok = ngx || php_com_apache(&c, &v); // o Nginx usa o php-cgi, que todo PHP tem
+        let ok = !com_apache || php_com_apache(&c, &v); // o Nginx usa o php-cgi, que todo PHP tem
         let rotulo = format!("{}{}{}", if v == c.php { "✔ " } else { "    " }, v, if ok { "" } else { "  (sem módulo Apache)" });
         phps.push(it(app, &format!("php:{v}"), &rotulo, ok)?);
     }
@@ -160,10 +170,10 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     phps.push(it(app, "folder:php", "Abrir pasta", true)?);
     let php = sub(app, "PHP", phps)?;
 
-    let tudo = if ap && my { "Parar tudo" } else { "Iniciar tudo" };
+    let tudo = if tudo_no_ar(&st, &c) { "Parar tudo" } else { "Iniciar tudo" };
     let itens: Vec<Item> = vec![
         elefante, www, novo, ferramentas, processos,
-        sep(app)?, apache, mariadb,
+        sep(app)?, apache, nginx, mariadb, redis,
         sep(app)?, mailpit,
         sep(app)?, node, php, python,
         sep(app)?, it(app, "all", tudo, true)?,
@@ -171,6 +181,12 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     ];
     let refs: Vec<&dyn IsMenuItem<Wry>> = itens.iter().map(|b| b.as_ref()).collect();
     Menu::with_items(app, &refs)
+}
+
+// Todos os marcados para o "Iniciar tudo" estão ligados: aí o mesmo botão vira "Parar tudo".
+fn tudo_no_ar(st: &App, c: &Cfg) -> bool {
+    let m = marcados(c);
+    !m.is_empty() && m.iter().all(|s| running(st, s))
 }
 
 pub fn erro(app: &AppHandle, msg: &str) {
@@ -192,8 +208,6 @@ fn agir(app: &AppHandle, id: &str) -> Result<(), String> {
     let c = load_cfg(&st.home);
     let b = Path::new(&c.bin);
     let logs = st.home.join("logs");
-    let ngx = c.web == "nginx";
-    let web = if ngx { "nginx" } else { "apache" };
     match id {
         "noop" => {}
         "show" => show(app),
@@ -239,16 +253,6 @@ fn agir(app: &AppHandle, id: &str) -> Result<(), String> {
             }
         }
         "reload" => do_reload(&st)?,
-        "web:trocar" => {
-            let estava = running(&st, "apache");
-            do_stop(&st, "apache"); // para o atual; se estava rodando, sobe o outro
-            let mut novo = c.clone();
-            novo.web = if ngx { "apache" } else { "nginx" }.into();
-            save_cfg(&st.home, &novo)?;
-            if estava {
-                do_start(&st, "apache")?;
-            }
-        }
         "xdebug" => {
             let msg = xdebug::trocar_e_recarregar(&st)?;
             show(app);
@@ -257,34 +261,32 @@ fn agir(app: &AppHandle, id: &str) -> Result<(), String> {
         "term" => open_terminal(&c, &c.www)?,
         "db" => open_heidi(&c)?,
         "trust" => trust(&st.home)?,
-        "url:mailpit" => browse(&format!("http://127.0.0.1:{MAILPIT_UI}/"))?,
+        "url:mailpit" => browse(&format!("http://127.0.0.1:{}/", c.mailpit_web_port))?,
         "all" => {
-            let desligar = running(&st, "apache") && running(&st, "mysql");
-            for s in SERVICES {
-                if desligar {
-                    do_stop(&st, s);
-                } else if let Err(e) = do_start(&st, s) {
-                    // Mailpit é opcional: se não estiver instalado, "Iniciar tudo" não reclama
-                    if s != "mailpit" {
-                        return Err(e);
-                    }
+            if tudo_no_ar(&st, &c) {
+                for s in SERVICES {
+                    do_stop(&st, s); // para também o que foi ligado à mão sem estar marcado
+                }
+            } else {
+                for s in marcados(&c) {
+                    do_start(&st, s)?;
                 }
             }
         }
         "open:config" => notepad(&st.home.join("config.json"))?,
-        "open:apache-conf" if ngx => notepad(&st.home.join("nginx/nginx.conf"))?,
         "open:apache-conf" => notepad(&st.home.join("apache/httpd.conf"))?,
-        "open:log-apache-error" => notepad(&logs.join(format!("{web}-error.log")))?,
-        "open:log-apache-access" => notepad(&logs.join(format!("{web}-access.log")))?,
+        "open:nginx-conf" => notepad(&st.home.join("nginx/nginx.conf"))?,
+        "open:log-apache-error" | "open:log-apache-access" | "open:log-nginx-error" | "open:log-nginx-access" => notepad(&logs.join(format!("{}.log", &id[9..])))?,
         "open:log-mysql" => notepad(&logs.join("mysql.out"))?,
+        "open:log-redis" => notepad(&logs.join("redis.out"))?,
         "open:log-mailpit" => notepad(&logs.join("mailpit.out"))?,
         "open:php-ini" => notepad(&b.join("php").join(&c.php).join("php.ini"))?,
         "folder:home" => explorer(&fwd(&st.home))?,
         "folder:bin" => explorer(&c.bin)?,
         "folder:www" => explorer(&c.www)?,
         "folder:logs" => explorer(&fwd(&logs))?,
-        "folder:apache" if ngx => explorer(&fwd(&b.join("nginx").join(&c.nginx)))?,
         "folder:apache" => explorer(&fwd(&b.join("apache").join(&c.apache)))?,
+        "folder:nginx" => explorer(&fwd(&b.join("nginx").join(&c.nginx)))?,
         "folder:mysql-data" => explorer(&fwd(&st.home.join("mysql-data")))?,
         "folder:php" | "folder:nodejs" | "folder:python" => explorer(&fwd(&b.join(&id[7..])))?,
         x if x.starts_with("svc:") => {
@@ -325,12 +327,10 @@ pub fn watch(app: AppHandle) {
             let b = Path::new(&c.bin);
 
             // Serviço ou processo que parou sem ninguém pedir: abre a janela com o aviso e o fim do log.
-            if c.web == "nginx" {
-                running(&st, "php-cgi"); // só este laço olha o php-cgi; o resto já é olhado no fim do ciclo
-            }
+            running(&st, "php-cgi"); // só este laço olha o php-cgi (sem Nginx, nem existe); o resto é olhado no fim do ciclo
             let caidos = std::mem::take(&mut *st.caidos.lock().unwrap());
             for svc in caidos {
-                erro(&app, &aviso_de_queda(&st, &c, &svc));
+                erro(&app, &aviso_de_queda(&st, &svc));
             }
 
             // Versão ativa trocada (bandeja, Preferências ou config.json à mão) com a opção do PATH em SIM:
@@ -349,9 +349,9 @@ pub fn watch(app: AppHandle) {
                 }
             }
 
-            // pasta nova (ou removida) em www com o Apache no ar: refaz os sites sozinho.
+            // pasta nova (ou removida) em www com o Apache ou o Nginx no ar: refaz os sites sozinho.
             // Só age quando a lista ficou igual em 2 ciclos seguidos, p/ não reiniciar no meio de uma cópia.
-            if running(&st, "apache") {
+            if running(&st, "apache") || running(&st, "nginx") {
                 let agora = sites_signature(&c);
                 if agora != *st.sites_sig.lock().unwrap() {
                     if agora == visto {
@@ -363,19 +363,20 @@ pub fn watch(app: AppHandle) {
                 }
             }
 
+            // running() de cada serviço aqui também é o que percebe quem caiu (vira aviso no próximo ciclo)
             let sig = format!(
-                "{}{}{}{}|{}|{}|{}|{}|{}|{}|{}|{}",
-                running(&st, "apache"),
-                running(&st, "mysql"),
-                running(&st, "mailpit"),
+                "{:?}{}{}|{}|{}|{}|{}|{}|{}|{:?}{}|{}",
+                SERVICES.map(|s| running(&st, s)),
                 mailpit_exe(&c).is_some(),
+                redis_exe(&c).is_some(),
                 list_sites(&c).iter().map(|s| s.name.clone()).collect::<Vec<_>>().join(","),
                 versions(&b.join("php")).join(","),
                 c.php,
                 versions(&b.join("nodejs")).join(","),
                 versions(&b.join("python")).join(","),
                 c.www,
-                format!("{}{}", c.web, xdebug::ligado(&c)),
+                c.iniciar,
+                xdebug::ligado(&c),
                 procs::load(&st.home).iter().map(|p| format!("{}{}{}", p.id, p.name, procs::is_running(&st, &p.id))).collect::<Vec<_>>().join(","),
             );
             if sig != ultimo {

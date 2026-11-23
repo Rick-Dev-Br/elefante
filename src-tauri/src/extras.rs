@@ -66,7 +66,7 @@ pub fn porta_dono(port: u16) -> Option<Owner> {
 #[tauri::command(async)]
 pub fn encerrar_dono_porta(st: State<App>, port: u16) -> Result<String, String> {
     let c = load_cfg(&st.home);
-    if ![c.http_port, c.https_port, c.mysql_port, MAILPIT_UI, MAILPIT_SMTP].contains(&port) {
+    if !c.portas_todas().contains(&port) {
         return Err("Essa porta não é uma das portas do Elefante.".into());
     }
     let o = port_owner(port).ok_or("Ninguém está usando essa porta agora.")?;
@@ -226,8 +226,9 @@ pub fn laravel_log(dir: &Path) -> Option<PathBuf> {
 fn caminho_do_log(st: &App, c: &Cfg, name: &str) -> Result<PathBuf, String> {
     let l = st.home.join("logs");
     Ok(match name {
-        "web-error" | "web-access" => l.join(format!("{}-{}.log", if c.web == "nginx" { "nginx" } else { "apache" }, &name[4..])),
+        "apache-error" | "apache-access" | "nginx-error" | "nginx-access" => l.join(format!("{name}.log")),
         "mysql" => l.join("mysql.out"),
+        "redis" => l.join("redis.out"),
         "mysql-lentas" => l.join("mysql-lentas.log"),
         "mysql-consultas" => l.join("mysql-consultas.log"),
         "mailpit" => l.join("mailpit.out"),
