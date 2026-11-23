@@ -10,10 +10,10 @@
   },
   "bundle": {
     "active": true,
-    "publisher": "Rick-dev",
-    "copyright": "© 2026 Rick-dev. Criado por Rick-dev.",
-    "shortDescription": "Elefante — ambiente local de desenvolvimento web, por Rick-dev",
-    "longDescription": "Elefante: Apache, PHP, MariaDB e Mailpit para desenvolvimento web local, com sites automáticos, HTTPS local e criação rápida de projetos. Criado por Rick-dev.",
+    "publisher": "Rick-Dev-Br",
+    "copyright": "© 2026 Rick-Dev-Br. Criado por Rick-Dev-Br.",
+    "shortDescription": "Elefante — ambiente local de desenvolvimento web, por Rick-Dev-Br",
+    "longDescription": "Elefante: Apache, PHP, MariaDB e Mailpit para desenvolvimento web local, com sites automáticos, HTTPS local e criação rápida de projetos. Criado por Rick-Dev-Br.",
     "targets": ["nsis"],
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.ico"]
   }

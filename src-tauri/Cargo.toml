@@ -1,8 +1,8 @@
 [package]
 name = "elefante"
 version = "1.0.0"
-authors = ["Rick-dev"]
-description = "Elefante — ambiente local de desenvolvimento web, criado por Rick-dev"
+authors = ["Rick-Dev-Br"]
+description = "Elefante — ambiente local de desenvolvimento web, criado por Rick-Dev-Br"
 edition = "2021"
 
 [build-dependencies]
