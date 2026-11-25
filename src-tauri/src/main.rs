@@ -36,6 +36,7 @@ const NO_WINDOW: u32 = 0x0800_0000;
 // Também a ordem do "Iniciar tudo": o banco e o cache sobem antes de quem usa eles.
 const SERVICES: [&str; 5] = ["mysql", "redis", "apache", "nginx", "mailpit"];
 const PHP_CGI: u16 = 9123; // php-cgi do Nginx (FastCGI), sempre só em 127.0.0.1
+const PHP_CGI_APACHE: u16 = 9124; // php-cgi do Apache com PHP NTS: o dele, para um servidor nunca parar o PHP do outro
 // Onde um serviço escuta: só esta máquina, ou todas as placas de rede (abre para outros aparelhos da rede).
 // IP de uma placa (ex.: 192.168.0.10) fica de fora: o Elefante e os .env dos projetos conectam em 127.0.0.1.
 const ENDERECOS: [&str; 2] = ["127.0.0.1", "0.0.0.0"];
@@ -72,6 +73,7 @@ struct Cfg {
     #[serde(skip_serializing_if = "Option::is_none")]
     iniciar: Option<Vec<String>>,
     escuta: BTreeMap<String, String>, // endereço de cada serviço (um de ENDERECOS); quem falta escuta só em 127.0.0.1
+    terminal: String, // id de terminais_instalados(); o que não está instalado abre o cmd
 }
 
 impl Cfg {
@@ -124,6 +126,7 @@ impl Default for Cfg {
             backup_auto: true,
             iniciar: None,
             escuta: BTreeMap::new(),
+            terminal: "wt".into(), // Windows Terminal: abas e cmd, PowerShell e Git Bash no mesmo lugar
         }
     }
 }
@@ -170,7 +173,6 @@ struct Status {
     ip_rede: Option<String>,                        // IP deste PC na rede local: o endereço para abrir de outro aparelho
     http_port: u16,                                 // porta dos links dos sites (botão Web)
     mailpit_web_port: u16,
-    usa_apache: bool, // o PHP ativo precisa do módulo do Apache
     ssl_ready: bool,
     php: String,
     xdebug: bool,
@@ -184,8 +186,8 @@ fn load_cfg(home: &Path) -> Cfg {
         // BOM (Notepad/PowerShell) quebraria o parse; arquivo ilegível nunca é sobrescrito
         Ok(s) => serde_json::from_str(s.trim_start_matches('\u{feff}')).unwrap_or_default(),
         Err(_) => {
-            // 1ª execução: se já existe um Laragon, aproveita as pastas dele; senão usa as do Elefante
-            let c = extras::detect_laragon().unwrap_or_default();
+            // 1ª execução: pastas do Elefante. Para usar as de outra instalação, troque a bin e a pasta dos sites em Ajustes.
+            let c = Cfg::default();
             let _ = fs::write(&f, serde_json::to_string_pretty(&c).unwrap());
             c
         }
@@ -370,9 +372,28 @@ fn marcados(c: &Cfg) -> Vec<&'static str> {
         .collect()
 }
 
-// O Apache roda o PHP pelo módulo dele (php8apache2_4.dll): marcado ou ligado, o PHP ativo precisa ter esse módulo.
-fn usa_apache(st: &App, c: &Cfg) -> bool {
-    c.sobe("apache") || running(st, "apache")
+// php-cgi (FastCGI) de cada servidor web: (nome no mapa de processos, porta). Sobe e para junto com o servidor.
+fn php_cgi(svc: &str) -> Option<(&'static str, u16)> {
+    match svc {
+        "nginx" => Some(("php-cgi", PHP_CGI)),
+        "apache" => Some(("php-cgi-apache", PHP_CGI_APACHE)),
+        _ => None,
+    }
+}
+
+// ponytail: 1 php-cgi atende 1 requisição por vez; se ele cair, o servidor responde 502/503 até reiniciar
+fn subir_php_cgi(st: &App, c: &Cfg, logs: &Path, id: &str, porta: u16) -> Result<(), String> {
+    let php = Path::new(&c.bin).join("php").join(&c.php);
+    if !php.join("php-cgi.exe").exists() {
+        return Err(format!("php-cgi.exe não encontrado em {}", fwd(&php)));
+    }
+    let mut cgi = Command::new(php.join("php-cgi.exe"));
+    cgi.arg("-b").arg(format!("127.0.0.1:{porta}")).arg("-c").arg(php.join("php.ini"));
+    cgi.env("PHP_FCGI_MAX_REQUESTS", "0"); // sem isso ele encerra sozinho a cada 500 requisições
+    cgi.env(SMTP_DO_SENDMAIL, smtp_mailpit(c));
+    let ch = spawn(cgi, &logs.join(format!("{id}.out")), &[porta])?;
+    st.procs.lock().unwrap().insert(id.to_string(), ch);
+    Ok(())
 }
 
 // IP deste PC na rede local. O connect do UDP não manda nada: só faz o Windows escolher a placa que sai para a rede.
@@ -423,9 +444,11 @@ fn do_start(st: &App, svc: &str) -> Result<(), String> {
 fn iniciar(st: &App, svc: &str) -> Result<(), String> {
     let c = load_cfg(&st.home);
     let mut ports = portas(&c, svc);
-    if svc == "nginx" {
-        do_stop(st, "php-cgi"); // sobrou de um Nginx que caiu: seguraria a porta
-        ports.push(PHP_CGI);
+    // php-cgi do servidor: o Nginx sempre usa; o Apache, só com PHP NTS
+    let cgi = php_cgi(svc).filter(|_| svc != "apache" || apache::usa_fastcgi(&c));
+    if let Some((id, porta)) = cgi {
+        do_stop(st, id); // sobrou de um servidor que caiu: seguraria a porta
+        ports.push(porta);
     }
     if let Some(port) = ports.iter().copied().find(|&p| in_use(p)) {
         let quem = extras::port_owner(port).map(|o| format!(" por {} (PID {})", o.name, o.pid)).unwrap_or_default();
@@ -443,9 +466,12 @@ fn iniciar(st: &App, svc: &str) -> Result<(), String> {
             let conf = apache::write_apache(&st.home, &c)?;
             *st.sites_sig.lock().unwrap() = sites_signature(&c);
             let root = Path::new(&c.bin).join("apache").join(&c.apache);
+            if let Some((id, porta)) = cgi {
+                subir_php_cgi(st, &c, &logs, id, porta)?;
+            }
             let mut cmd = Command::new(root.join("bin/httpd.exe"));
             cmd.arg("-f").arg(conf).env(SMTP_DO_SENDMAIL, smtp_mailpit(&c));
-            spawn(cmd, &logs.join("apache.out"), &ports)?
+            spawn(cmd, &logs.join("apache.out"), &portas(&c, "apache")).inspect_err(|_| do_stop(st, "php-cgi-apache"))?
         }
         "redis" => {
             let exe = redis_exe(&c).ok_or_else(|| format!("O Redis ainda não está em {}/redis. Instale em Ajustes → Componentes.", c.bin))?;
@@ -506,8 +532,9 @@ fn iniciar(st: &App, svc: &str) -> Result<(), String> {
 }
 
 fn do_stop(st: &App, svc: &str) {
-    if svc == "nginx" {
-        do_stop(st, "php-cgi"); // o PHP do Nginx
+    // o PHP do servidor web (pelo nome, sem olhar o PHP ativo: ele pode ter trocado com o php-cgi ligado)
+    if let Some((id, _)) = php_cgi(svc) {
+        do_stop(st, id);
     }
     let child = st.procs.lock().unwrap().remove(svc);
     let Some(mut ch) = child else { return };
@@ -573,6 +600,7 @@ fn aviso_de_queda(st: &App, svc: &str) -> String {
         "redis" => ("O Redis parou sozinho. Ligue de novo no Painel.".to_string(), logs.join("redis.out")),
         "mailpit" => ("O Mailpit parou sozinho. Ligue de novo no Painel.".to_string(), logs.join("mailpit.out")),
         "php-cgi" => ("O PHP do Nginx parou sozinho. Reinicie o Nginx no Painel.".to_string(), logs.join("php-cgi.out")),
+        "php-cgi-apache" => ("O PHP do Apache parou sozinho. Reinicie o Apache no Painel.".to_string(), logs.join("php-cgi-apache.out")),
         x => {
             let id = x.trim_start_matches("proc:");
             let nome = procs::load(&st.home).into_iter().find(|p| p.id == id).map_or_else(|| id.to_string(), |p| p.name);
@@ -599,7 +627,6 @@ fn status(st: State<App>) -> Status {
         ip_rede: ip_rede(),
         http_port: portas_dos_links(&c).0,
         mailpit_web_port: c.mailpit_web_port,
-        usa_apache: usa_apache(&st, &c),
         ssl_ready: c.ssl && st.home.join("ssl/site.crt").exists(),
         sites: list_sites(&c),
         php: c.php.clone(),
@@ -667,7 +694,7 @@ fn trust(home: &Path) -> Result<(), String> {
     if out.status.success() { Ok(()) } else { Err("Instalação cancelada ou negada.".into()) }
 }
 
-// <bin>/<pasta>/<exe> ou <bin>/<pasta>/<versão>/<exe> (como no Laragon, ou num zip que traz uma pasta dentro)
+// <bin>/<pasta>/<exe> ou <bin>/<pasta>/<versão>/<exe> (uma pasta por versão, ou num zip que traz uma pasta dentro)
 fn exe_opcional(c: &Cfg, pasta: &str, exe: &str) -> Option<PathBuf> {
     let d = Path::new(&c.bin).join(pasta);
     let direto = d.join(exe);
@@ -743,17 +770,57 @@ fn tool_path(c: &Cfg) -> String {
         .join(";")
 }
 
-// Terminal com as ferramentas no PATH, começando em `cwd`.
+// Terminais que o Elefante sabe abrir, só os instalados: (id, nome na tela, executável).
+fn terminais_instalados(c: &Cfg) -> Vec<(&'static str, &'static str, PathBuf)> {
+    let mut v = Vec::new();
+    // O wt.exe é um atalho de execução do Windows (um link): confere o link, sem tentar abrir o destino.
+    let wt = Path::new(&std::env::var("LOCALAPPDATA").unwrap_or_default()).join("Microsoft\\WindowsApps\\wt.exe");
+    if fs::symlink_metadata(&wt).is_ok() {
+        v.push(("wt", "Windows Terminal", wt));
+    }
+    v.push(("powershell", "PowerShell", PathBuf::from("powershell.exe")));
+    v.push(("cmd", "Prompt de Comando (cmd)", PathBuf::from("cmd.exe")));
+    let git_instalado = Path::new(&std::env::var("ProgramFiles").unwrap_or_default()).join("Git\\git-bash.exe");
+    if let Some(g) = exe_opcional(c, "git", "git-bash.exe").or_else(|| git_instalado.exists().then_some(git_instalado)) {
+        v.push(("gitbash", "Git Bash", g));
+    }
+    if let Some(x) = exe_opcional(c, "cmder", "Cmder.exe") {
+        v.push(("cmder", "Cmder", x)); // copiado para bin\cmder
+    }
+    v
+}
+
+// O escolhido em Ajustes; se ele saiu do PC, o cmd, que todo Windows tem.
+fn terminal_escolhido(c: &Cfg) -> (&'static str, PathBuf) {
+    let mut v = terminais_instalados(c);
+    let i = v.iter().position(|t| t.0 == c.terminal).or_else(|| v.iter().position(|t| t.0 == "cmd")).unwrap_or(0);
+    let (id, _, exe) = v.swap_remove(i);
+    (id, exe)
+}
+
+#[tauri::command(async)]
+fn terminais(st: State<App>) -> Vec<(&'static str, &'static str)> {
+    terminais_instalados(&load_cfg(&st.home)).into_iter().map(|(id, nome, _)| (id, nome)).collect()
+}
+
+// Terminal com as ferramentas no PATH, começando em `cwd`. O PATH vai pelo ambiente: todos herdam, inclusive a aba
+// que o Windows Terminal abre (as abas novas abertas depois pelo "+" dele usam o PATH do Windows).
 fn open_terminal(c: &Cfg, cwd: &str) -> Result<(), String> {
-    let path = tool_path(c);
-    Command::new("cmd")
-        .args(["/c", "start", "", "cmd", "/k"]) // 1º arg do start = título; vazio, senão ele tenta executar o título
-        .env("PATH", path)
+    let (id, exe) = terminal_escolhido(c);
+    let mut cmd = Command::new(if matches!(id, "cmd" | "powershell") { PathBuf::from("cmd") } else { exe.clone() });
+    match id {
+        "wt" => cmd.arg("-d").arg(cwd),
+        "gitbash" => cmd.arg(format!("--cd={cwd}")),
+        "cmder" => cmd.arg("/START").arg(cwd),
+        "powershell" => cmd.args(["/c", "start", "", "powershell", "-NoExit"]), // 1º arg do start = título: vazio
+        _ => cmd.args(["/c", "start", "", "cmd", "/k"]),
+    };
+    cmd.env("PATH", tool_path(c))
         .env(SMTP_DO_SENDMAIL, smtp_mailpit(c))
         .current_dir(cwd)
         .spawn()
         .map(|_| ())
-        .map_err(|e| e.to_string())
+        .map_err(|e| format!("O terminal {} ficou sem abrir ({e}). Escolha outro em Ajustes → Comportamento.", fwd(&exe)))
 }
 
 #[tauri::command(async)]
@@ -824,7 +891,7 @@ fn validar(cfg: &Cfg) -> Result<(), String> {
         return Err("Servidor web inválido.".into());
     }
     if cfg.bin.trim().is_empty() || cfg.www.trim().is_empty() || cfg.backups.trim().is_empty() {
-        return Err("Preencha as pastas bin, www e de backups.".into());
+        return Err("Preencha a pasta dos sites, a bin e a de backups.".into());
     }
     if cfg.domain.is_empty() || !cfg.domain.chars().all(|ch| ch.is_ascii_alphanumeric() || ".-".contains(ch)) {
         return Err("Domínio inválido (use letras, números, ponto e hífen).".into());
@@ -874,7 +941,7 @@ fn main() {
                 });
             }
 
-            // menu da bandeja completo (como o do Laragon); é refeito sozinho quando o estado muda
+            // menu da bandeja completo; é refeito sozinho quando o estado muda
             TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip("Elefante")
@@ -898,10 +965,10 @@ fn main() {
                 let _ = w.hide();
             }
         })
-        .invoke_handler(tauri::generate_handler![status, start, stop, reload_sites, terminal, open_url, open_www, open_db, ssl_trusted, trust_ca, project::create_project, project::project_preparar, project::sites_info, components::components, components::install_component, components::php_disponiveis, components::php_instalar, components::php_patch, components::php_atualizar_patch, phpini::php_trocar, phpini::versoes, phpini::php_config, phpini::php_aplicar, site_open, get_config, save_config,
+        .invoke_handler(tauri::generate_handler![status, start, stop, reload_sites, terminal, terminais, open_url, open_www, open_db, ssl_trusted, trust_ca, project::create_project, project::project_preparar, project::sites_info, components::components, components::install_component, components::php_disponiveis, components::php_instalar, components::php_patch, components::php_atualizar_patch, phpini::php_trocar, phpini::versoes, phpini::php_config, phpini::php_aplicar, site_open, get_config, save_config,
             procs::procs_list, procs::proc_save, procs::proc_delete, procs::proc_start, procs::proc_stop, procs::proc_log,
             dbtools::db_list, dbtools::db_backup, dbtools::db_backup_um, dbtools::db_backups, dbtools::db_abrir_backups, dbtools::db_criar, dbtools::db_copiar, dbtools::db_apagar, dbtools::db_consultas, dbtools::db_consultas_estado, dbtools::db_import_sql, dbtools::db_import_legacy,
-            extras::porta_dono, extras::encerrar_dono_porta, extras::vcredist_ok, extras::get_autostart, extras::set_autostart, extras::log_tail, extras::log_lista, extras::log_limpar, extras::hosts_faltando, extras::hosts_completar, xdebug::xdebug_toggle,
+            extras::porta_dono, extras::encerrar_dono_porta, extras::vcredist_ok, extras::get_autostart, extras::set_autostart, extras::log_tail, extras::log_lista, extras::log_limpar, extras::hosts_faltando, extras::hosts_completar, xdebug::xdebug_toggle, envpath::path_recarregar,
             firewall::fw_exes, firewall::fw_listar, firewall::fw_criar, firewall::fw_ligar, firewall::fw_editar, firewall::fw_remover])
         .build(tauri::generate_context!())
         .expect("erro ao iniciar o Elefante")
@@ -1158,6 +1225,20 @@ mod tests {
     }
 
     #[test]
+    fn terminal_escolhido_ou_o_cmd() {
+        let h = tmp("terminal");
+        fs::create_dir_all(h.join("git")).unwrap();
+        fs::write(h.join("git/git-bash.exe"), "").unwrap();
+        let c = |t: &str| Cfg { bin: fwd(&h), terminal: t.into(), ..Cfg::default() };
+        assert_eq!(terminal_escolhido(&c("gitbash")), ("gitbash", h.join("git").join("git-bash.exe")), "o Git Bash da bin");
+        assert_eq!(terminal_escolhido(&c("powershell")).0, "powershell");
+        assert_eq!(terminal_escolhido(&c("cmder")).0, "cmd", "sem bin\\cmder: abre o cmd em vez de dar erro");
+        assert_eq!(terminal_escolhido(&c("lixo")).0, "cmd");
+        assert_eq!(Cfg::default().terminal, "wt", "instalação nova: Windows Terminal (sem ele, o cmd)");
+        let _ = fs::remove_dir_all(&h);
+    }
+
+    #[test]
     fn url_so_aceita_http_simples() {
         assert!(browse("javascript:alert(1)").is_err());
         assert!(browse("http://a.lvh.me/ & calc").is_err());
@@ -1221,6 +1302,39 @@ mod tests {
         c.escuta.insert("mailpit".into(), "0.0.0.0".into());
         assert_eq!(c.ip_porta("mailpit", c.mailpit_smtp_port), "0.0.0.0", "o SMTP vai para a rede");
         assert_eq!(c.ip_porta("mailpit", c.mailpit_web_port), "127.0.0.1", "a tela, sem senha, fica só aqui");
+        let _ = fs::remove_dir_all(&h);
+    }
+
+    #[test]
+    fn apache_roda_o_php_5_7_e_8_pelo_modulo_e_a_nts_pelo_php_cgi() {
+        let h = tmp("modulo");
+        let arquivo = |p: &str| {
+            let f = h.join("bin").join(p);
+            fs::create_dir_all(f.parent().unwrap()).unwrap();
+            fs::write(f, "").unwrap();
+        };
+        arquivo("apache/httpd/bin/httpd.exe");
+        for (pasta, p) in [("php-5.6.40-Win32-vc11-x64", "php5"), ("php-7.4.33-Win32-vc15-x64", "php7"), ("php-8.4.28-Win32-vs17-x64", "php8")] {
+            arquivo(&format!("php/{pasta}/{p}apache2_4.dll"));
+            arquivo(&format!("php/{pasta}/{p}ts.dll"));
+        }
+        arquivo("php/php-8.4.28-nts-Win32-vs17-x64/php-cgi.exe");
+        let c = Cfg { bin: fwd(&h.join("bin")), www: fwd(&h.join("www")), apache: "httpd".into(), ssl: false, ..Cfg::default() };
+        for (pasta, nome, p) in [("php-5.6.40-Win32-vc11-x64", "php5_module", "php5"), ("php-7.4.33-Win32-vc15-x64", "php7_module", "php7"), ("php-8.4.28-Win32-vs17-x64", "php_module", "php8")] {
+            let c = Cfg { php: pasta.into(), ..c.clone() };
+            assert!(!apache::usa_fastcgi(&c), "{pasta} tem o módulo: o Apache não sobe php-cgi");
+            let conf = fs::read_to_string(apache::write_apache(&h.join("home"), &c).unwrap()).unwrap();
+            assert!(conf.contains(&format!("LoadFile \"{}/php/{pasta}/{p}ts.dll\"", c.bin)), "{conf}");
+            assert!(conf.contains(&format!("LoadModule {nome} \"{}/php/{pasta}/{p}apache2_4.dll\"", c.bin)), "{conf}");
+            assert!(!conf.contains("proxy:fcgi"), "{conf}");
+        }
+        let nts = Cfg { php: "php-8.4.28-nts-Win32-vs17-x64".into(), ..c.clone() };
+        assert!(apache::usa_fastcgi(&nts));
+        let conf = fs::read_to_string(apache::write_apache(&h.join("home"), &nts).unwrap()).unwrap();
+        assert!(conf.contains(&format!("SetHandler \"proxy:fcgi://127.0.0.1:{PHP_CGI_APACHE}/\"")), "a barra do fim evita o C: grudar na porta\n{conf}");
+        assert!(conf.contains("ProxyFCGISetEnvIf") && !conf.contains("LoadModule php"), "{conf}");
+        assert_eq!(php_cgi("apache"), Some(("php-cgi-apache", PHP_CGI_APACHE)), "porta própria: parar um servidor não derruba o PHP do outro");
+        assert_ne!(php_cgi("nginx").unwrap().1, PHP_CGI_APACHE);
         let _ = fs::remove_dir_all(&h);
     }
 }

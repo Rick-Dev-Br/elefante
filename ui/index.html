@@ -283,7 +283,7 @@
         <button class="tile" id="db"><svg class="ic"><use href="#i-db"/></svg>Banco de dados</button>
         <button class="tile" id="mail"><svg class="ic"><use href="#i-mail"/></svg>E-mails</button>
         <button class="tile" id="term"><svg class="ic"><use href="#i-term"/></svg>Terminal</button>
-        <button class="tile" id="www"><svg class="ic"><use href="#i-folder"/></svg>Pasta www</button>
+        <button class="tile" id="www"><svg class="ic"><use href="#i-folder"/></svg>Pasta dos sites</button>
       </div>
 
       <h2>Novo projeto</h2>
@@ -406,7 +406,7 @@
     <section class="view" id="v-ajustes">
       <h2>Pastas e versões</h2>
       <div class="form-grid">
-        <label for="p_www">Pasta www</label><input class="field" id="p_www" spellcheck="false">
+        <label for="p_www">Pasta dos sites</label><input class="field" id="p_www" spellcheck="false">
         <label for="p_bin">Pasta bin</label><input class="field" id="p_bin" spellcheck="false">
         <label for="p_backups">Pasta de backups</label><input class="field" id="p_backups" spellcheck="false">
         <label for="p_apache">Versão do Apache</label><select class="field" id="p_apache"></select>
@@ -424,7 +424,8 @@
         <span>HTTPS</span><label class="check"><input type="checkbox" id="p_ssl"> Sites também em https://</label>
         <span>Ao abrir</span><label class="check"><input type="checkbox" id="p_auto"> Iniciar os serviços sozinho</label>
         <span>Com o Windows</span><label class="check"><input type="checkbox" id="p_win"> Abrir o Elefante ao ligar o PC (fica na bandeja)</label>
-        <span>PATH do Windows</span><label class="check"><input type="checkbox" id="p_envauto"> Alterar variáveis de ambiente automaticamente ao alterar versões de executáveis</label>
+        <label for="p_terminal">Terminal</label><select class="field" id="p_terminal" style="width:auto" title="O que abre no atalho Terminal e no botão de terminal de cada site, já com o PHP, o Composer e o Node ativos"></select>
+        <span>PATH do Windows</span><div class="line"><label class="check"><input type="checkbox" id="p_envauto"> Manter as versões ativas no PATH do Windows (ao abrir o Elefante e ao trocar de versão)</label><button type="button" class="btn small" id="path_recarregar" title="Tira do PATH o que o Elefante pôs antes e as pastas apagadas da bin, e põe as versões ativas">Recarregar agora</button></div>
         <span>Backup</span><label class="check"><input type="checkbox" id="p_bauto"> Salvar os bancos sozinho uma vez por dia, com o MariaDB ligado (guarda os 5 últimos)</label>
       </div>
       <div class="line" style="margin-top:14px"><button class="btn primary" id="saveprefs"><svg class="ic sm"><use href="#i-check"/></svg>Salvar</button><span id="pmsg" style="color:var(--muted)"></span></div>
@@ -543,9 +544,9 @@ async function refresh() {
   }
   $('s-xdebug').classList.toggle('on', s.xdebug); $('xdebug').setAttribute('aria-checked', s.xdebug);
   $('p-xdebug').textContent = s.xdebug ? 'ligado · porta 9003 · use ?XDEBUG_TRIGGER=1' : 'desligado';
-  $('c-sites').textContent = s.sites.length;
+  $('c-sites').textContent = s.sites.length; $('www').title = s.www;
   const sig = JSON.stringify(s.sites) + s.ssl_ready; if (sig !== sitesSig) { sitesSig = sig; renderSites(); if (document.body.dataset.view === 'sites') loadSitesInfo(); }
-  const phpS = s.php + s.usa_apache; if (phpS !== phpSig) { phpSig = phpS; loadPhpPainel().catch(fail); }
+  if (s.php !== phpSig) { phpSig = s.php; loadPhpPainel().catch(fail); checarPatchPhp(); }
   $('ssl').hidden = !s.ssl_ready; if (s.ssl_ready && trusted === null) checkTrust();
 }
 
@@ -638,7 +639,7 @@ function renderSites(forcar) {
     `<button class="btn icon" data-act="folder" data-name="${esc(x.name)}" title="Abrir pasta" aria-label="Abrir pasta de ${esc(x.name)}">${ic('folder')}</button>` +
     `<button class="btn icon" data-act="terminal" data-name="${esc(x.name)}" title="Terminal na pasta do projeto" aria-label="Terminal em ${esc(x.name)}">${ic('term')}</button>` +
     `<button class="btn icon" data-act="code" data-name="${esc(x.name)}" title="Abrir no VS Code" aria-label="Abrir ${esc(x.name)} no VS Code">${ic('code')}</button></div></div>`).join('')
-    : `<div class="empty">${ic('search')}<div>${q ? 'Nenhum site com esse filtro.' : 'Nenhum site ainda. Crie uma pasta em www ou use “Novo projeto”.'}</div></div>`;
+    : `<div class="empty">${ic('search')}<div>${q ? 'Nenhum site com esse filtro.' : `Nenhum site ainda. Crie uma pasta em ${esc(cur.www)} ou use “Novo projeto”.`}</div></div>`;
 }
 $('q').addEventListener('input', () => renderSites());
 
@@ -822,9 +823,11 @@ $('svcs').innerHTML = '<span class="cab">Sobe no Iniciar</span><span class="cab"
     `<select class="field" id="ip_${id}" aria-label="Endereço do ${nome}"><option value="127.0.0.1">127.0.0.1 · só este PC</option><option value="0.0.0.0">0.0.0.0 · rede local</option></select>` +
     campoPorta(p1, `Porta do ${nome}`) + (p2 ? `<span>${rot}</span>${campoPorta(p2, `Porta ${rot} do ${nome}`)}` : '<span></span><span></span>')).join('');
 async function loadPrefs() {
-  const [c, v] = await Promise.all([invoke('get_config'), invoke('versoes')]);
+  const [c, v, terms] = await Promise.all([invoke('get_config'), invoke('versoes'), invoke('terminais')]);
+  $('p_terminal').innerHTML = terms.map(([id, nome]) => `<option value="${esc(id)}">${esc(nome)}</option>`).join('');
+  $('p_terminal').value = terms.some(([id]) => id === c.terminal) ? c.terminal : 'cmd'; // o escolhido saiu do PC: abre o cmd
   $('p_www').value = c.www; $('p_bin').value = c.bin; $('p_backups').value = c.backups;
-  opcoesDeVersao('p_apache', v.apache, c.apache); opcoesDeVersao('p_nginx', v.nginx, c.nginx); opcoesDeVersao('p_php', v.php.map((p) => p.nome), c.php); opcoesDeVersao('p_mysql', v.mysql, c.mysql);
+  opcoesDeVersao('p_apache', v.apache, c.apache); opcoesDeVersao('p_nginx', v.nginx, c.nginx); opcoesDeVersao('p_php', v.php, c.php); opcoesDeVersao('p_mysql', v.mysql, c.mysql);
   for (const [id, , portas] of SVC_PORTAS) {
     $('sv_' + id).checked = (c.iniciar || []).includes(id);
     $('ip_' + id).value = c.escuta[id] || '127.0.0.1';
@@ -833,6 +836,10 @@ async function loadPrefs() {
   $('p_domain').value = c.domain; $('p_ssl').checked = c.ssl; $('p_auto').checked = c.auto_start; $('p_envauto').checked = c.env_auto; $('p_bauto').checked = c.backup_auto;
   $('p_win').checked = await invoke('get_autostart');
 }
+$('path_recarregar').onclick = async (e) => {
+  const b = e.currentTarget; b.disabled = true; b.classList.add('loading');
+  try { toast(await invoke('path_recarregar'), 'ok'); } catch (err) { fail(err); } finally { b.disabled = false; b.classList.remove('loading'); }
+};
 $('p_win').addEventListener('change', async () => {
   try { await invoke('set_autostart', { on: $('p_win').checked }); toast($('p_win').checked ? 'O Elefante vai abrir com o Windows.' : 'O Elefante não abre mais com o Windows.', 'ok'); }
   catch (e) { fail(e); $('p_win').checked = !$('p_win').checked; }
@@ -841,7 +848,7 @@ $('saveprefs').addEventListener('click', async () => {
   $('pmsg').textContent = '';
   const cfg = {
     www: $('p_www').value.trim(), bin: $('p_bin').value.trim(), backups: $('p_backups').value.trim(), apache: $('p_apache').value, nginx: $('p_nginx').value, php: $('p_php').value, mysql: $('p_mysql').value,
-    domain: $('p_domain').value.trim(), ssl: $('p_ssl').checked, auto_start: $('p_auto').checked, env_auto: $('p_envauto').checked, backup_auto: $('p_bauto').checked,
+    domain: $('p_domain').value.trim(), ssl: $('p_ssl').checked, auto_start: $('p_auto').checked, env_auto: $('p_envauto').checked, backup_auto: $('p_bauto').checked, terminal: $('p_terminal').value,
     iniciar: SVC_PORTAS.filter(([id]) => $('sv_' + id).checked).map(([id]) => id),
     escuta: Object.fromEntries(SVC_PORTAS.map(([id]) => [id, $('ip_' + id).value])),
   };
@@ -857,10 +864,7 @@ $('saveprefs').addEventListener('click', async () => {
 /* ---------- PHP ---------- */
 async function loadPhpPainel() {
   if (!cur) return;
-  const v = await invoke('versoes'), sel = $('php_ver'), soNginx = (p) => cur.usa_apache && !p.apache;
-  const lista = v.php.some((p) => p.nome === cur.php) ? v.php : [{ nome: cur.php, apache: true }, ...v.php];
-  sel.innerHTML = lista.map((p) => `<option value="${esc(p.nome)}" ${soNginx(p) ? 'disabled' : ''}>${esc(p.nome)}${soNginx(p) ? ' (só Nginx)' : ''}</option>`).join('');
-  sel.value = cur.php;
+  opcoesDeVersao('php_ver', (await invoke('versoes')).php, cur.php);
 }
 $('php_ver').addEventListener('change', (e) => {
   const sel = e.target;
@@ -888,7 +892,7 @@ $('php_lista').onclick = async (e) => {
   const b = e.currentTarget; b.disabled = true; b.classList.add('loading');
   try {
     const l = await invoke('php_disponiveis');
-    $('php_disp').innerHTML = l.map((p) => `<option value="${esc(p.pasta)}" ${p.instalada ? 'disabled' : ''}>${esc(p.versao)} ${p.ts ? 'TS (Apache e Nginx)' : 'NTS (só Nginx)'} · ${esc(p.tamanho)}${p.instalada ? ' · instalada' : ''}</option>`).join('');
+    $('php_disp').innerHTML = l.map((p) => `<option value="${esc(p.pasta)}" ${p.instalada ? 'disabled' : ''}>${esc(p.versao)} ${p.ts ? 'TS' : 'NTS'} ·${esc(p.tamanho)}${p.instalada ? ' · instalada' : ''}</option>`).join('');
     const livre = l.find((p) => !p.instalada); if (livre) $('php_disp').value = livre.pasta;
     $('php_disp').hidden = false; $('php_baixar').hidden = false; b.hidden = true;
   } catch (err) { fail(err); } finally { b.disabled = false; b.classList.remove('loading'); }
@@ -1001,18 +1005,25 @@ ev.listen('tauri://drag-drop', (e) => {
 
 window.__TAURI__.app.getVersion().then((v) => { $('ver').textContent = 'v' + v; $('ver2').textContent = 'v' + v; }).catch(() => {});
 invoke('vcredist_ok').then((ok) => { $('vc').hidden = ok; }).catch(() => {});
-// correção nova do PHP em uso (8.4.27 -> 8.4.28): avisa ao abrir; o clique baixa, leva o php.ini e troca
+// correção nova do PHP em uso (8.4.27 -> 8.4.28): o refresh confere ao abrir e a cada troca do PHP ativo; o clique baixa (se faltar), leva o php.ini e troca
 async function atualizarPatchPhp() {
   const a = $('php_patch_bt'); if (a.dataset.busy) return;
   a.dataset.busy = '1'; a.textContent = 'Atualizando…';
   try { toast(await invoke('php_atualizar_patch'), 'ok'); $('php_patch').hidden = true; loadPhpPainel().catch(fail); }
   catch (e) { fail(e); a.textContent = 'Tentar de novo'; delete a.dataset.busy; }
 }
-invoke('php_patch').then((p) => {
-  if (!p) return;
-  $('php_patch_tx').innerHTML = `Saiu o <b>PHP ${esc(p.versao)}</b>, com correções para a versão que você usa. <a id="php_patch_bt">Atualizar agora</a>. O php.ini e as extensões vão junto.`;
-  $('php_patch_bt').onclick = atualizarPatchPhp; $('php_patch').hidden = false;
-}).catch(() => {}); // sem internet ao abrir: fica sem o aviso
+let patchPedido = 0; // número da última conferência (troca rápida: vale a última)
+function checarPatchPhp() {
+  const pedido = ++patchPedido;
+  invoke('php_patch').then((p) => {
+    if (pedido !== patchPedido) return;
+    $('php_patch').hidden = !p; if (!p) return;
+    $('php_patch_tx').innerHTML = p.instalada
+      ? `O <b>PHP ${esc(p.versao)}</b> já está instalado, com correções para a versão que você usa. <a id="php_patch_bt">Usar agora</a>.`
+      : `Saiu o <b>PHP ${esc(p.versao)}</b>, com correções para a versão que você usa. <a id="php_patch_bt">Atualizar agora</a>. O php.ini e as extensões vão junto.`;
+    $('php_patch_bt').onclick = atualizarPatchPhp;
+  }).catch(() => { if (pedido === patchPedido) $('php_patch').hidden = true; }); // sem internet: some o aviso, que era do PHP anterior
+}
 refresh().catch(fail);
 loadProcs().catch(() => {});
 setInterval(() => {
