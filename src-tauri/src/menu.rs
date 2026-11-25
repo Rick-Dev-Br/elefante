@@ -33,11 +33,6 @@ pub fn versions(dir: &Path) -> Vec<String> {
     v
 }
 
-// Só os PHP "thread safe" têm o módulo do Apache (php8apache2_4.dll); os outros servem só pro terminal.
-pub fn php_com_apache(c: &Cfg, v: &str) -> bool {
-    Path::new(&c.bin).join("php").join(v).join("php8apache2_4.dll").exists()
-}
-
 pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let st = app.state::<App>();
     let c = load_cfg(&st.home);
@@ -68,8 +63,8 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         sites.push(it(app, "noop", "(nenhum site)", false)?);
     }
     sites.push(sep(app)?);
-    sites.push(it(app, "folder:www", "Abrir pasta www", true)?);
-    let www = sub(app, "www", sites)?;
+    sites.push(it(app, "folder:www", "Abrir pasta dos sites", true)?);
+    let www = sub(app, "Sites", sites)?;
 
     let novo = sub(app, "Criar rapidamente um website", vec![
         it(app, "new:blank", "Vazio", true)?,
@@ -85,7 +80,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         it(app, "trust", "Confiar no HTTPS", true)?,
         it(app, "firewall-ui", "Bloqueio de rede (Firewall)…", true)?,
         sep(app)?,
-        it(app, "path:add", "Pôr as versões ativas no PATH do Windows", true)?,
+        it(app, "path:add", "Recarregar o PATH do Windows (tira o antigo e põe as versões ativas)", true)?,
         it(app, "path:del", "Tirar o Elefante do PATH do Windows", true)?,
         sep(app)?,
         it(app, "folder:logs", "Pasta de logs", true)?,
@@ -157,12 +152,11 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let node = sub(app, "Node.js", lista("nodejs")?)?;
     let python = sub(app, "Python", lista("python")?)?;
 
+    // Todo PHP roda nos dois servidores: TS pelo módulo do Apache, NTS pelo php-cgi (apache::conf_php).
     let mut phps: Vec<Item> = Vec::new();
-    let com_apache = usa_apache(&st, &c);
     for v in versions(&b.join("php")) {
-        let ok = !com_apache || php_com_apache(&c, &v); // o Nginx usa o php-cgi, que todo PHP tem
-        let rotulo = format!("{}{}{}", if v == c.php { "✔ " } else { "    " }, v, if ok { "" } else { "  (sem módulo Apache)" });
-        phps.push(it(app, &format!("php:{v}"), &rotulo, ok)?);
+        let rotulo = format!("{}{}", if v == c.php { "✔ " } else { "    " }, v);
+        phps.push(it(app, &format!("php:{v}"), &rotulo, true)?);
     }
     phps.push(sep(app)?);
     phps.push(it(app, "xdebug", &marca(xdebug::ligado(&c), "Xdebug"), true)?);
@@ -228,14 +222,16 @@ fn agir(app: &AppHandle, id: &str) -> Result<(), String> {
             show(app);
             let _ = app.emit("abrir-firewall", ());
         }
-        "path:add" | "path:del" => {
-            let add = id == "path:add";
-            let mudou = if add { envpath::aplicar(&st.home, &c)? } else { envpath::remover(&st.home)? };
-            let msg = match (add, mudou) {
-                (true, true) => "PATH do Windows atualizado com as versões ativas. Abra um terminal novo pra valer.",
-                (true, false) => "O PATH do Windows já estava com as versões ativas.",
-                (false, true) => "O Elefante saiu do PATH do Windows (o resto do PATH ficou igual).",
-                (false, false) => "O Elefante não tinha nada no PATH do Windows.",
+        "path:add" => {
+            let msg = envpath::recarregar(&st.home, &c)?;
+            show(app);
+            let _ = app.emit("info", msg);
+        }
+        "path:del" => {
+            let msg = if envpath::remover(&st.home, &c)? {
+                "O Elefante saiu do PATH do Windows (o resto do PATH ficou igual)."
+            } else {
+                "O Elefante não tinha nada no PATH do Windows."
             };
             show(app);
             let _ = app.emit("info", msg);
@@ -327,7 +323,9 @@ pub fn watch(app: AppHandle) {
             let b = Path::new(&c.bin);
 
             // Serviço ou processo que parou sem ninguém pedir: abre a janela com o aviso e o fim do log.
-            running(&st, "php-cgi"); // só este laço olha o php-cgi (sem Nginx, nem existe); o resto é olhado no fim do ciclo
+            // só este laço olha os php-cgi (sem o servidor deles, nem existem); o resto é olhado no fim do ciclo
+            running(&st, "php-cgi");
+            running(&st, "php-cgi-apache");
             let caidos = std::mem::take(&mut *st.caidos.lock().unwrap());
             for svc in caidos {
                 erro(&app, &aviso_de_queda(&st, &svc));

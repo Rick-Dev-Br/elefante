@@ -1,4 +1,4 @@
-// Utilidades do sistema: dono de uma porta, Visual C++, iniciar com o Windows, detecção do Laragon, logs.
+// Utilidades do sistema: dono de uma porta, Visual C++, iniciar com o Windows, logs, arquivo hosts.
 use super::*;
 
 pub fn run_text(prog: &str, args: &[&str]) -> String {
@@ -114,33 +114,6 @@ pub fn set_autostart(on: bool) -> Result<(), String> {
     if o.status.success() || !on { Ok(()) } else { Err(String::from_utf8_lossy(&o.stderr).trim().to_string()) }
 }
 
-// ---- 1ª execução: aproveita um Laragon já instalado ----
-
-// Primeira subpasta (ordem decrescente = versão mais nova) que contém `arquivo`.
-fn primeira_com(dir: &Path, arquivo: &str) -> Option<String> {
-    let mut v: Vec<String> = fs::read_dir(dir)
-        .ok()?
-        .flatten()
-        .filter(|e| e.path().join(arquivo).exists())
-        .map(|e| e.file_name().to_string_lossy().to_string())
-        .collect();
-    v.sort();
-    v.pop()
-}
-
-pub fn detect_laragon() -> Option<Cfg> {
-    let b = Path::new("C:/laragon/bin");
-    let apache = primeira_com(&b.join("apache"), "bin/httpd.exe")?;
-    let mut c = Cfg { bin: "C:/laragon/bin".into(), www: "C:/laragon/www".into(), apache, ..Cfg::default() };
-    if let Some(p) = primeira_com(&b.join("php"), "php8apache2_4.dll") {
-        c.php = p;
-    }
-    if let Some(m) = primeira_com(&b.join("mysql"), "bin/mysqld.exe") {
-        c.mysql = m;
-    }
-    Some(c)
-}
-
 // ---- sites sem internet: *.lvh.me depende de DNS externo; uma linha no hosts resolve sem rede ----
 
 fn arquivo_hosts() -> PathBuf {
@@ -176,7 +149,7 @@ pub fn hosts_faltando(st: State<App>) -> Vec<String> {
     hosts_faltando_em(&ler_hosts(), &enderecos_dos_sites(&load_cfg(&st.home)))
 }
 
-// Só acrescenta: linhas de outros programas (ex.: as do Laragon) ficam como estão. O Windows pede administrador.
+// Só acrescenta: linhas de outros programas ficam como estão. O Windows pede administrador.
 #[tauri::command(async)]
 pub fn hosts_completar(st: State<App>) -> Result<String, String> {
     let hosts = ler_hosts();
@@ -304,7 +277,7 @@ mod tests {
     #[test]
     fn hosts_so_acrescenta_o_que_falta() {
         let sites = ["Portifolio.lvh.me", "novo.lvh.me", "comentado.lvh.me", "outro.lvh.me", "sigv.lvh.me"].map(String::from);
-        let hosts = "# 127.0.0.1 falso.lvh.me\r\n127.0.0.1      portifolio.lvh.me     #laragon magic!\r\n#127.0.0.1 comentado.lvh.me\r\n10.0.0.5 a.lvh.me outro.lvh.me\r\n127.0.0.1 sigv.lvh.me";
+        let hosts = "# 127.0.0.1 falso.lvh.me\r\n127.0.0.1      portifolio.lvh.me     #outro programa\r\n#127.0.0.1 comentado.lvh.me\r\n10.0.0.5 a.lvh.me outro.lvh.me\r\n127.0.0.1 sigv.lvh.me";
         let falta = hosts_faltando_em(hosts, &sites);
         assert_eq!(falta, ["novo.lvh.me", "comentado.lvh.me"], "maiúscula não importa, comentado conta como faltando, outro IP é escolha de quem pôs");
         assert_eq!(linhas_novas(hosts, &falta), "\r\n127.0.0.1      novo.lvh.me #elefante\r\n127.0.0.1      comentado.lvh.me #elefante\r\n", "sem quebra no fim do arquivo, começa com uma");

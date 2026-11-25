@@ -142,7 +142,7 @@ pub fn create_project(st: State<App>, kind: String, name: String, url: String) -
     let www = Path::new(&c.www);
     let dir = www.join(&name);
     if dir.exists() {
-        return Err("Já existe uma pasta com esse nome em www.".into());
+        return Err(format!("Já existe a pasta {name} em {}. Escolha outro nome para o projeto.", c.www));
     }
     let (php, composer) = (php_exe(&c), composer_phar(&c));
     match kind.as_str() {

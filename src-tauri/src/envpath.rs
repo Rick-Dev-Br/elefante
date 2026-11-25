@@ -1,8 +1,9 @@
 // PATH do Windows (o do USUÁRIO, em HKCU\Environment: não precisa de admin) com as versões ativas do Elefante.
 // Automático com "Alterar variáveis de ambiente automaticamente" ligado nas Preferências (menu::watch percebe a
-// troca de versão); manual pelo menu Ferramentas da bandeja. O Elefante anota em <app_data>/path-elefante.json
-// as pastas que ELE pôs no PATH e só mexe nelas: o resto (seu ou de outros programas) fica igual, na mesma
-// ordem e com o mesmo tipo de valor (REG_EXPAND_SZ continua expandindo %USERPROFILE% etc.).
+// troca de versão, e roda ao abrir); manual pelo "Recarregar" da bandeja e de Ajustes. O Elefante anota em
+// <app_data>/path-elefante.json as pastas que ELE pôs no PATH e só mexe nelas e nas pastas apagadas da bin: o resto
+// (seu ou de outros programas) fica igual, na mesma ordem e com o mesmo tipo de valor (REG_EXPAND_SZ continua
+// expandindo %USERPROFILE% etc.).
 // Não usa setx: ele corta o PATH em 1024 caracteres.
 use super::*;
 use std::{ffi::c_void, ptr::null_mut};
@@ -96,12 +97,19 @@ fn mesclar(atual: &str, desejado: &[String], nossos: &[String]) -> (String, Vec<
     (path, postos)
 }
 
-fn sincronizar(sub: &str, home: &Path, desejado: &[String]) -> Result<bool, String> {
+// Entradas do PATH dentro da pasta bin que apontam para uma pasta que não existe mais (versão apagada à mão, ou posta
+// sem a anotação do Elefante): saem junto com as dele. Fora da bin nada é tocado, mesmo apontando para o nada.
+fn mortas_na_bin(atual: &str, bin: &str) -> Vec<String> {
+    let dentro = path_key(bin) + "\\";
+    atual.split(';').filter(|e| path_key(e).starts_with(&dentro) && !Path::new(e.trim()).exists()).map(String::from).collect()
+}
+
+fn sincronizar(sub: &str, home: &Path, bin: &str, desejado: &[String]) -> Result<bool, String> {
     let _t = TRAVA.lock().unwrap_or_else(|e| e.into_inner());
     let anot = home.join("path-elefante.json");
     let nossos: Vec<String> = fs::read_to_string(&anot).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
     let (atual, tipo) = ler(sub, "Path")?;
-    let (novo, postos) = mesclar(&atual, desejado, &nossos);
+    let (novo, postos) = mesclar(&atual, desejado, &[nossos.clone(), mortas_na_bin(&atual, bin)].concat());
     let mudou = novo != atual;
     if mudou {
         gravar(sub, "Path", &novo, tipo)?;
@@ -113,22 +121,38 @@ fn sincronizar(sub: &str, home: &Path, desejado: &[String]) -> Result<bool, Stri
     Ok(mudou)
 }
 
-// Põe as versões ativas no PATH do Windows. true = o PATH mudou.
+// Recarrega o PATH do Windows num passo só: tira o que o Elefante pôs antes (e as pastas apagadas da bin) e põe as
+// versões ativas. true = o PATH mudou.
 pub fn aplicar(home: &Path, c: &Cfg) -> Result<bool, String> {
-    let mudou = sincronizar(ENV, home, &pastas(c))?;
+    let mudou = sincronizar(ENV, home, &c.bin, &pastas(c))?;
     if mudou {
         avisar_windows();
     }
     Ok(mudou)
 }
 
-// Tira do PATH só o que o Elefante pôs.
-pub fn remover(home: &Path) -> Result<bool, String> {
-    let mudou = sincronizar(ENV, home, &[])?;
+// Tira do PATH só o que o Elefante pôs (e as pastas apagadas da bin).
+pub fn remover(home: &Path, c: &Cfg) -> Result<bool, String> {
+    let mudou = sincronizar(ENV, home, &c.bin, &[])?;
     if mudou {
         avisar_windows();
     }
     Ok(mudou)
+}
+
+// Bandeja (Ferramentas) e botão de Ajustes: o mesmo recarregar, com o texto do que aconteceu.
+pub fn recarregar(home: &Path, c: &Cfg) -> Result<String, String> {
+    Ok(if aplicar(home, c)? {
+        "PATH do Windows recarregado: saiu o que estava antigo e entraram as versões ativas. Abra um terminal novo para usar."
+    } else {
+        "O PATH do Windows já estava com as versões ativas."
+    }
+    .into())
+}
+
+#[tauri::command(async)]
+pub fn path_recarregar(st: State<App>) -> Result<String, String> {
+    recarregar(&st.home, &load_cfg(&st.home))
 }
 
 #[cfg(test)]
@@ -177,20 +201,39 @@ mod tests {
         gravar(&sub, "Path", usuario, REG_EXPAND_SZ).unwrap();
 
         let mut c = Cfg { bin: fwd(&bin), php: "php-8.4".into(), ..Cfg::default() };
-        assert!(sincronizar(&sub, &home, &pastas(&c)).unwrap());
+        assert!(sincronizar(&sub, &home, &c.bin, &pastas(&c)).unwrap());
         let (p, tipo) = ler(&sub, "Path").unwrap();
         assert_eq!(tipo, REG_EXPAND_SZ, "%USERPROFILE% continua expandindo");
         assert_eq!(p, format!(r"{}\php\php-8.4;{usuario}", win_path(&bin)));
 
         c.php = "php-8.5".into(); // troca a versão ativa
-        assert!(sincronizar(&sub, &home, &pastas(&c)).unwrap());
+        assert!(sincronizar(&sub, &home, &c.bin, &pastas(&c)).unwrap());
         assert_eq!(ler(&sub, "Path").unwrap().0, format!(r"{}\php\php-8.5;{usuario}", win_path(&bin)));
-        assert!(!sincronizar(&sub, &home, &pastas(&c)).unwrap(), "sem troca, não grava de novo");
+        assert!(!sincronizar(&sub, &home, &c.bin, &pastas(&c)).unwrap(), "sem troca, não grava de novo");
 
-        assert!(sincronizar(&sub, &home, &[]).unwrap());
+        // a versão ativa foi apagada à mão: no próximo recarregar ela sai, e nada entra no lugar
+        fs::remove_dir_all(bin.join("php").join("php-8.5")).unwrap();
+        assert!(sincronizar(&sub, &home, &c.bin, &pastas(&c)).unwrap());
         assert_eq!(ler(&sub, "Path").unwrap().0, usuario);
 
+        assert!(!sincronizar(&sub, &home, &c.bin, &[]).unwrap(), "já não tinha nada do Elefante");
+
         unsafe { RegDeleteKeyW(HKCU, wide(&sub).as_ptr()) };
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn pasta_apagada_da_bin_sai_mesmo_sem_anotacao() {
+        let home = std::env::temp_dir().join(format!("elefante-teste-mortas-{}", std::process::id()));
+        let bin = home.join("bin");
+        fs::create_dir_all(bin.join("git").join("cmd")).unwrap();
+        let (b, fora) = (win_path(&bin), r"C:\elefante-teste-fora-que-nao-existe");
+        // PHP apagado (dentro da bin), Git posto à mão (dentro da bin, existe), pasta de outro programa que sumiu
+        let atual = format!(r"{b}\php\php-7.0;{b}\git\cmd;{fora};%USERPROFILE%\x");
+        assert_eq!(mortas_na_bin(&atual, &fwd(&bin)), vec![format!(r"{b}\php\php-7.0")]);
+        let (p, postos) = mesclar(&atual, &[], &mortas_na_bin(&atual, &(fwd(&bin) + "/")));
+        assert_eq!(p, format!(r"{b}\git\cmd;{fora};%USERPROFILE%\x"), "fora da bin e o que existe ficam");
+        assert!(postos.is_empty(), "o que saiu não vira anotação");
         let _ = fs::remove_dir_all(&home);
     }
 }

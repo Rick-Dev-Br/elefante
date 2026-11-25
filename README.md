@@ -20,7 +20,7 @@
 ## ✨ O que ele faz
 
 - **Sites automáticos** — cada pasta em `C:\elefante\www` vira `http://<pasta>.lvh.me`, sem precisar mexer no arquivo `hosts`. Cada site mostra o tipo do projeto (Laravel 12, Astro…) e avisa quando o PHP ativo não atende o que o `composer.json` pede. Se existir uma subpasta `public/`, ela vira a raiz do site; se ela não tiver página de entrada e existir `dist/index.html` (Astro, Vite), a raiz é o `dist/`.
-- **Apache e Nginx** — rodam juntos, cada um nas suas portas (padrão 80/443 e 8080/8443), ou só um deles. Mesmos sites e certificado.
+- **Apache e Nginx** — rodam juntos, cada um nas suas portas (padrão 80/443 e 8080/8443), ou só um deles. Mesmos sites e certificado. Qualquer PHP roda nos dois, do 5.6 ao 8.x: o TS (Thread Safe) pelo módulo do Apache, e o NTS (Non Thread Safe) pelo `php-cgi` (FastCGI), com um `php-cgi` para cada servidor.
 - **Serviços e portas** — em Ajustes, cada serviço tem a sua porta, o endereço em que escuta e se sobe com **Iniciar tudo**.
 - **Redis** — opcional, baixado em Componentes (build do projeto redis-windows, conferida pelo sha256 publicado).
 - **HTTPS local** — CA própria instalada no repositório do usuário (sem admin) e um certificado com todos os sites. Funciona no Chrome e no Edge.
@@ -29,16 +29,17 @@
 - **Troca de PHP pela janela** — versão ativa no Painel; em Ajustes, extensões, limites do `php.ini` e download de outras versões da lista oficial, com o sha256 conferido. Se o PHP reclamar da mudança, o `php.ini` volta como estava.
 - **Correções do PHP com um clique** — ao abrir, o app confere se saiu uma correção do PHP em uso (ex.: 8.4.27 → 8.4.28, mesmo ramo e mesmo tipo TS/NTS) e mostra um aviso com **Atualizar agora**. A versão nova recebe o seu `php.ini` e as extensões extras (como o Xdebug); a anterior continua instalada para voltar pelo Painel. Se o download falhar, nada muda.
 - **Novo projeto** — vazio, Laravel, Symfony, WordPress ou clonado do Git, já com a pasta, o banco, as dependências e o `.env` configurados.
+- **Terminal** — o atalho do Painel e o botão de cada site abrem o terminal escolhido em Ajustes (Windows Terminal, PowerShell, cmd, Git Bash ou o Cmder de `bin\cmder`), já com o PHP, o Composer, o MariaDB e o Node ativos no PATH. Só aparecem os instalados.
 - **Painel de processos** — `php artisan serve`, `npm run dev`, `queue:work`… liga e desliga por projeto, com log.
-- **Bancos de dados** — criar, copiar e apagar por banco (apagar salva um backup antes), backup automático uma vez por dia, restaurar sempre como banco novo, importar `.sql` arrastando o arquivo, e trazer bancos de uma pasta de dados antiga (ex.: Laragon) sem alterar o original.
+- **Bancos de dados** — criar, copiar e apagar por banco (apagar salva um backup antes), backup automático uma vez por dia, restaurar sempre como banco novo, importar `.sql` arrastando o arquivo, e trazer bancos de uma pasta de dados antiga (de outra instalação do MariaDB) sem alterar o original.
 - **Logs ao vivo** — servidor web, PHP, MariaDB, Mailpit, processos e o `laravel.log` de cada projeto, com filtro, execução anterior e botão de limpar. Dá para registrar as consultas do MariaDB (só as lentas ou todas) sem instalar nada no projeto.
 - **Aviso de queda** — se um serviço ou processo para sozinho, a janela abre com o aviso e o fim do log.
 - **E-mails de teste** — Mailpit em `http://localhost:8025` (SMTP na porta `1025`; as duas mudam em Ajustes).
 - **Bandeja do sistema** — menu com serviços, sites, troca de versão do PHP e opção de iniciar com o Windows.
 - **Quem está na porta?** — mostra qual programa ocupa a 80/443/3306 e permite encerrá-lo.
-- **PATH do Windows** — põe as versões ativas (PHP, Composer, MariaDB, Node, Apache, Nginx) no PATH do usuário, pelo menu **Ferramentas** ou sozinho ao trocar de versão (Ajustes → *Alterar variáveis de ambiente automaticamente*). Só mexe no que o próprio Elefante pôs; o resto do seu PATH fica igual. Não precisa de admin.
+- **PATH do Windows** — põe as versões ativas (PHP, Composer, MariaDB, Node, Apache, Nginx) no PATH do usuário, pelo botão **Recarregar agora** (Ajustes) e pelo menu **Ferramentas**, ou sozinho ao abrir o Elefante e ao trocar de versão (Ajustes → *Manter as versões ativas no PATH do Windows*). Recarregar tira o que o Elefante pôs antes e as pastas apagadas da bin (ex.: um PHP removido à mão), e põe as versões ativas, num passo só. Fora disso não mexe em nada: o resto do seu PATH fica igual. Não precisa de admin.
 - **Bloqueio de rede por versão** — bloqueia entrada e/ou saída de um executável específico (ex.: só o PHP 8.5, não o 8.4) no Firewall do Windows, para simular falta de internet. Veja abaixo.
-- **Migração do Laragon** — na primeira execução, aproveita as pastas de um Laragon já instalado.
+- **Pastas de outra instalação** — em Ajustes, a pasta bin e a pasta dos sites podem apontar para outra instalação organizada do mesmo jeito (`bin\<programa>\<versão>`). Na primeira execução o Elefante usa sempre as pastas dele, em `C:\elefante`.
 
 Por padrão tudo escuta só em `127.0.0.1`: nada fica exposto para a rede, e o app não envia dados para nenhum servidor. Para testar no celular, mude o endereço de um serviço para `0.0.0.0` em **Ajustes → Serviços e portas**: o Painel mostra o IP deste PC na rede (os endereços `.lvh.me` só abrem no próprio PC).
 
@@ -180,7 +181,7 @@ elefante/
     │   ├── menu.rs        # Menu da bandeja
     │   ├── envpath.rs     # PATH do Windows com as versões ativas
     │   ├── firewall.rs    # Bloqueio de rede por executável/versão
-    │   └── extras.rs      # Portas, VC++, autostart, Laragon, logs, arquivo hosts
+    │   └── extras.rs      # Portas, VC++, autostart, logs, arquivo hosts
     └── tauri.conf.json
 ```
 

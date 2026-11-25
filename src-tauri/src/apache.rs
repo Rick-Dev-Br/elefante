@@ -58,14 +58,48 @@ pub fn ensure_cert(home: &Path, c: &Cfg, apache_root: &Path, sites: &[Site]) -> 
     Ok((fwd(&dir.join("site.crt")), fwd(&dir.join("site.key"))))
 }
 
+// Módulo do Apache de uma pasta do PHP: (módulo, dll do PHP, nome no LoadModule). Só a TS tem, e o nome muda com a
+// versão maior: php5apache2_4.dll + php5ts.dll (5.x), php7... (7.x), php8... (8.x, que trocou o nome para php_module).
+pub fn modulo_apache(php: &Path) -> Option<(PathBuf, PathBuf, &'static str)> {
+    [("php8", "php_module"), ("php7", "php7_module"), ("php5", "php5_module")]
+        .into_iter()
+        .map(|(p, nome)| (php.join(format!("{p}apache2_4.dll")), php.join(format!("{p}ts.dll")), nome))
+        .find(|(modulo, _, _)| modulo.exists())
+}
+
+// PHP ativo sem o módulo do Apache (NTS): o Apache roda o PHP num php-cgi próprio, por FastCGI, como o Nginx.
+pub fn usa_fastcgi(c: &Cfg) -> bool {
+    modulo_apache(&Path::new(&c.bin).join("php").join(&c.php)).is_none()
+}
+
+// Como o Apache roda o PHP: pelo módulo (TS) ou passando o .php para o php-cgi (NTS).
+fn conf_php(root: &Path, php: &Path) -> String {
+    if let Some((modulo, php_ts, nome)) = modulo_apache(php) {
+        // LoadFile: o Windows procura o php8ts.dll (ou php7ts, php5ts) primeiro na pasta do httpd.exe. Se lá tiver o de
+        // outra versão (há ferramentas que copiam pra lá ao trocar de PHP), o Apache cai ao iniciar. Carregando antes, vale o certo.
+        return format!(
+            "LoadFile \"{}\"\nLoadModule {nome} \"{}\"\nPHPIniDir \"{}\"\nAddHandler application/x-httpd-php .php\n",
+            fwd(&php_ts),
+            fwd(&modulo),
+            fwd(php)
+        );
+    }
+    // A barra depois da porta é obrigatória no Windows: sem ela, o "C:" do arquivo gruda no endereço ("porta 9124c:").
+    // O Apache manda o SCRIPT_FILENAME como /C:/... (ou com o proxy:fcgi:// na frente), que o php-cgi não acha: a
+    // regra deixa só o caminho a partir do disco.
+    format!(
+        "LoadModule proxy_module \"{r}/modules/mod_proxy.so\"\nLoadModule proxy_fcgi_module \"{r}/modules/mod_proxy_fcgi.so\"\n\
+<FilesMatch \"\\.php$\">\n  SetHandler \"proxy:fcgi://127.0.0.1:{PHP_CGI_APACHE}/\"\n</FilesMatch>\n\
+ProxyFCGISetEnvIf \"reqenv('SCRIPT_FILENAME') =~ m#^(?:proxy:fcgi://[^/]+)?/([A-Za-z]:/.*)#\" SCRIPT_FILENAME \"$1\"\n",
+        r = fwd(root)
+    )
+}
+
 pub fn write_apache(home: &Path, c: &Cfg) -> Result<PathBuf, String> {
     let root = Path::new(&c.bin).join("apache").join(&c.apache);
     let php = Path::new(&c.bin).join("php").join(&c.php);
     if !root.join("bin/httpd.exe").exists() {
         return Err(format!("Apache não encontrado em {}", fwd(&root)));
-    }
-    if !php.join("php8apache2_4.dll").exists() {
-        return Err(format!("php8apache2_4.dll não encontrado em {}", fwd(&php)));
     }
     fs::create_dir_all(&c.www).map_err(|e| format!("criar {}: {e}", c.www))?;
     let dir = home.join("apache");
@@ -102,18 +136,12 @@ pub fn write_apache(home: &Path, c: &Cfg) -> Result<PathBuf, String> {
         String::new()
     };
 
-    // LoadFile: o Windows procura o php8ts.dll primeiro na pasta do httpd.exe. Se lá tiver o de outra versão
-    // (o Laragon copia pra lá ao trocar de PHP), o Apache cai ao iniciar. Carregando antes pelo caminho, vale o certo.
     let conf = format!(
         r#"ServerRoot "{root}"
 Listen {ip}:{port}
 ServerName localhost:{port}
 {mods}{ssl_conf}
-LoadFile "{php}/php8ts.dll"
-LoadModule php_module "{php}/php8apache2_4.dll"
-PHPIniDir "{php}"
-AddHandler application/x-httpd-php .php
-DirectoryIndex index.php index.html
+{php_conf}DirectoryIndex index.php index.html
 TypesConfig "{root}/conf/mime.types"
 ErrorLog "{logs}/apache-error.log"
 LogLevel warn
@@ -137,8 +165,8 @@ PidFile "{dir}/httpd.pid"
 </LocationMatch>
 Include "{dir}/sites/*.conf"
 "#,
+        php_conf = conf_php(&root, &php),
         root = fwd(&root),
-        php = fwd(&php),
         ip = c.ip("apache"),
         port = c.http_port,
         logs = fwd(&home.join("logs")),

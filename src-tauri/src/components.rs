@@ -61,7 +61,7 @@ pub fn components(st: State<App>) -> Vec<Comp> {
         .collect()
 }
 
-// Mailpit e Redis também valem em bin\<nome>\<versão>\ (como no Laragon, ou no zip que traz uma pasta dentro).
+// Mailpit e Redis também valem em bin\<nome>\<versão>\ (uma pasta por versão, ou o zip que traz uma pasta dentro).
 fn pkg_installed(c: &Cfg, p: &Pkg) -> bool {
     match p.id {
         "mailpit" => mailpit_exe(c).is_some(),

@@ -88,19 +88,9 @@ http {{
 }
 
 // Sobe o php-cgi (guardado como "php-cgi"; para junto com o Nginx) e devolve o processo do Nginx.
-// ponytail: 1 php-cgi atende 1 requisição por vez; se ele cair, o Nginx responde 502 até reiniciar
 pub fn start(st: &App, c: &Cfg, logs: &Path) -> Result<Child, String> {
     let conf = write_nginx(&st.home, c)?;
-    let php = Path::new(&c.bin).join("php").join(&c.php);
-    if !php.join("php-cgi.exe").exists() {
-        return Err(format!("php-cgi.exe não encontrado em {}", fwd(&php)));
-    }
-    let mut cgi = Command::new(php.join("php-cgi.exe"));
-    cgi.arg("-b").arg(format!("127.0.0.1:{PHP_CGI}")).arg("-c").arg(php.join("php.ini"));
-    cgi.env("PHP_FCGI_MAX_REQUESTS", "0"); // sem isso ele encerra sozinho a cada 500 requisições
-    cgi.env(SMTP_DO_SENDMAIL, smtp_mailpit(c));
-    let ch = spawn(cgi, &logs.join("php-cgi.out"), &[PHP_CGI])?;
-    st.procs.lock().unwrap().insert("php-cgi".into(), ch);
+    subir_php_cgi(st, c, logs, "php-cgi", PHP_CGI)?;
 
     let root = Path::new(&c.bin).join("nginx").join(&c.nginx);
     let mut cmd = Command::new(root.join("nginx.exe"));

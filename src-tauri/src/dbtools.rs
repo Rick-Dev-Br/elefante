@@ -1,5 +1,5 @@
 // Ferramentas do MariaDB do Elefante: listar, criar, copiar e apagar bancos, backup (manual e automático), importar .sql,
-// ver as consultas e importar uma pasta de dados antiga (ex.: do Laragon).
+// ver as consultas e importar uma pasta de dados antiga (de outra instalação do MariaDB).
 // Nada aqui apaga ou altera a pasta de dados antiga: ela é COPIADA pra uma pasta temporária e aberta lá.
 use super::*;
 use std::io::{BufRead, BufReader, BufWriter, Write};
